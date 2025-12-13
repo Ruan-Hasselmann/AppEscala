@@ -1,24 +1,17 @@
-import { Redirect, Slot } from "expo-router";
-import { ActivityIndicator, View } from "react-native";
-import { useAuth } from "../../src/contexts/AuthContext";
+import { Slot } from "expo-router";
+import { StyleSheet, View } from "react-native";
 
 export default function ProtectedLayout() {
-  const { user, loading } = useAuth();
-
-  // Enquanto verifica auth
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" />
+  return (
+    <View style={styles.container}>
+      <View style={styles.content}>
+        <Slot />
       </View>
-    );
-  }
-
-  // ❌ NÃO LOGADO → LOGIN
-  if (!user) {
-    return <Redirect href="/login" />;
-  }
-
-  // ✅ LOGADO → libera acesso
-  return <Slot />;
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  content: { flex: 1 },
+});

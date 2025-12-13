@@ -1,3 +1,4 @@
+import AppScreen from "@/src/components/AppScreen";
 import { useEffect, useState } from "react";
 import {
   Modal,
@@ -20,7 +21,6 @@ import {
   weekDays,
 } from "../../../src/utils/calendar";
 
-// 🔹 Tipagem correta dos turnos
 type ServiceTurn = {
   morning: boolean;
   night: boolean;
@@ -36,13 +36,13 @@ export default function AdminDashboard() {
   const monthKey = getMonthKey(new Date(year, month));
   const days = getCalendarDays(year, month);
 
-  const [serviceDays, setServiceDays] = useState<
-    Record<string, ServiceTurn>
-  >({});
+  const [serviceDays, setServiceDays] = useState<Record<string, ServiceTurn>>(
+    {}
+  );
 
-  // 🔹 Modal state
+  // 🔹 Modal
   const [modalVisible, setModalVisible] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
   const [selectedTurns, setSelectedTurns] = useState<ServiceTurn>({
     morning: false,
     night: false,
@@ -57,60 +57,52 @@ export default function AdminDashboard() {
   }, [monthKey]);
 
   function prevMonth() {
-    setMonth((prev) => {
-      if (prev === 0) {
-        setYear((y) => y - 1);
-        return 11;
-      }
-      return prev - 1;
-    });
+    setMonth((prev) => (prev === 0 ? 11 : prev - 1));
+    if (month === 0) setYear((y) => y - 1);
   }
 
   function nextMonth() {
-    setMonth((prev) => {
-      if (prev === 11) {
-        setYear((y) => y + 1);
-        return 0;
-      }
-      return prev + 1;
-    });
+    setMonth((prev) => (prev === 11 ? 0 : prev + 1));
+    if (month === 11) setYear((y) => y + 1);
   }
 
-  function openModal(date: Date) {
+  function openSundayModal(date: Date) {
     const dateKey = date.toISOString().split("T")[0];
     const current = serviceDays[dateKey] || { morning: false, night: false };
 
-    setSelectedDate(date);
+    setSelectedDateKey(dateKey);
     setSelectedTurns(current);
     setModalVisible(true);
   }
 
   async function saveTurns() {
-    if (!selectedDate) return;
+    if (!selectedDateKey) return;
 
-    const dateKey = selectedDate.toISOString().split("T")[0];
-    const current = serviceDays[dateKey] || { morning: false, night: false };
+    const current = serviceDays[selectedDateKey] || {
+      morning: false,
+      night: false,
+    };
 
     if (selectedTurns.morning !== current.morning) {
-      await toggleServiceDay(monthKey, dateKey, "morning");
+      await toggleServiceDay(monthKey, selectedDateKey, "morning");
     }
 
     if (selectedTurns.night !== current.night) {
-      await toggleServiceDay(monthKey, dateKey, "night");
+      await toggleServiceDay(monthKey, selectedDateKey, "night");
     }
 
     const updated = await getServiceDays(monthKey);
     setServiceDays(updated);
 
     setModalVisible(false);
-    setSelectedDate(null);
+    setSelectedDateKey(null);
   }
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
       <Text style={styles.title}>Dias de Culto</Text>
       <Text style={styles.subtitle}>
-        Toque em um dia para definir os turnos do culto
+        Toque nos dias para definir quando há culto
       </Text>
 
       <View style={styles.headerBlock}>
@@ -130,8 +122,7 @@ export default function AdminDashboard() {
 
         <CalendarLegend
           items={[
-            { color: "#1E3A8A", label: "Culto manhã" },
-            { color: "#4C1D95", label: "Culto noite" },
+            { color: "#0073ffff", label: "Dia de culto" },
             { color: "#E5E7EB", label: "Sem culto" },
           ]}
         />
@@ -147,35 +138,38 @@ export default function AdminDashboard() {
 
       <View style={styles.calendar}>
         {days.map((date, index) => {
-          if (!date) {
-            return <View key={index} style={styles.empty} />;
-          }
+          if (!date) return <View key={index} style={styles.empty} />;
 
           const dateKey = date.toISOString().split("T")[0];
           const turns = serviceDays[dateKey];
           const hasService = turns?.morning || turns?.night;
+          const isSunday = date.getDay() === 0;
 
           return (
             <TouchableOpacity
               key={index}
-              style={[
-                styles.day,
-                turns?.morning && styles.morningDay,
-                turns?.night && styles.nightDay,
-                turns?.morning && turns?.night && styles.bothTurns,
-              ]}
-              onPress={() => openModal(date)}
+              style={[styles.day, hasService && styles.serviceDay]}
+              onPress={async () => {
+                if (isSunday) {
+                  openSundayModal(date);
+                } else {
+                  // Semana → culto único (morning)
+                  await toggleServiceDay(monthKey, dateKey, "morning");
+                  const updated = await getServiceDays(monthKey);
+                  setServiceDays(updated);
+                }
+              }}
             >
               <Text
                 style={[
                   styles.dayNumber,
-                  hasService && { color: "#FFFFFF" },
+                  hasService && { color: "#111827" },
                 ]}
               >
                 {date.getDate()}
               </Text>
 
-              {hasService && (
+              {isSunday && hasService && (
                 <View style={styles.turnsColumn}>
                   {turns.morning && <Text style={styles.icon}>☀️</Text>}
                   {turns.night && <Text style={styles.icon}>🌙</Text>}
@@ -186,11 +180,11 @@ export default function AdminDashboard() {
         })}
       </View>
 
-      {/* 🔹 MODAL */}
+      {/* 🔹 MODAL (SOMENTE DOMINGO) */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Definir turnos</Text>
+            <Text style={styles.modalTitle}>Definir turnos (domingo)</Text>
 
             <Pressable
               style={[
@@ -201,7 +195,7 @@ export default function AdminDashboard() {
                 setSelectedTurns((p) => ({ ...p, morning: !p.morning }))
               }
             >
-              <Text style={styles.modalButtonText}>☀️ Manhã</Text>
+              <Text>☀️ Manhã</Text>
             </Pressable>
 
             <Pressable
@@ -213,7 +207,7 @@ export default function AdminDashboard() {
                 setSelectedTurns((p) => ({ ...p, night: !p.night }))
               }
             >
-              <Text style={styles.modalButtonText}>🌙 Noite</Text>
+              <Text>🌙 Noite</Text>
             </Pressable>
 
             <Pressable style={styles.saveButton} onPress={saveTurns}>
@@ -222,12 +216,9 @@ export default function AdminDashboard() {
 
             <Pressable
               style={styles.cancelButton}
-              onPress={() => {
-                setModalVisible(false);
-                setSelectedDate(null);
-              }}
+              onPress={() => setModalVisible(false)}
             >
-              <Text style={styles.cancelButtonText}>Cancelar</Text>
+              <Text>Cancelar</Text>
             </Pressable>
           </View>
         </View>
@@ -236,77 +227,28 @@ export default function AdminDashboard() {
       <TouchableOpacity style={styles.logout} onPress={logout}>
         <Text style={styles.logoutText}>Sair</Text>
       </TouchableOpacity>
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-
-  title: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 4,
-  },
-
-  subtitle: {
-    color: "#374151",
-    marginBottom: 16,
-  },
-
-  headerBlock: {
-    marginBottom: 12,
-  },
-
+  title: { fontSize: 22, fontWeight: "bold", marginBottom: 4 },
+  subtitle: { color: "#374151", marginBottom: 16 },
+  headerBlock: { marginBottom: 12 },
   monthHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 8,
   },
-
-  arrow: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-
-  arrowText: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: "#1E3A8A",
-  },
-
-  monthTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    textTransform: "capitalize",
-    color: "#111827",
-  },
-
-  weekRow: {
-    flexDirection: "row",
-    marginBottom: 8,
-  },
-
-  weekDay: {
-    width: "14.28%",
-    textAlign: "center",
-    fontWeight: "700",
-    color: "#374151",
-    fontSize: 13,
-  },
-
-  calendar: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-
-  empty: {
-    width: "14.28%",
-    height: 52,
-  },
-
+  arrow: { padding: 8 },
+  arrowText: { fontSize: 26, color: "#1E3A8A" },
+  monthTitle: { fontSize: 20, fontWeight: "700" },
+  weekRow: { flexDirection: "row", marginBottom: 8 },
+  weekDay: { width: "14.28%", textAlign: "center", fontWeight: "700" },
+  calendar: { flexDirection: "row", flexWrap: "wrap" },
+  empty: { width: "14.28%", height: 90 },
   day: {
     width: "14.28%",
     minHeight: 90,
@@ -316,105 +258,56 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E7EB",
     alignItems: "center",
   },
-
-  dayNumber: {
-    fontSize: 15,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-
-  turnsColumn: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-  },
-
-  icon: {
-    fontSize: 18,
-  },
-
-  morningDay: {
-    backgroundColor: "#1E3A8A",
-  },
-
-  nightDay: {
-    backgroundColor: "#4C1D95",
-  },
-
-  bothTurns: {
-    borderWidth: 2,
-    borderColor: "#FACC15",
-  },
-
+  serviceDay: { backgroundColor: "#0073ffff" },
+  dayNumber: { fontWeight: "700", marginBottom: 4 },
+  turnsColumn: { alignItems: "center", gap: 6 },
+  icon: { fontSize: 18 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "center",
     alignItems: "center",
   },
-
   modalContent: {
     width: "80%",
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 16,
   },
-
   modalTitle: {
     fontSize: 18,
     fontWeight: "700",
     marginBottom: 12,
     textAlign: "center",
   },
-
   modalButton: {
     padding: 12,
     borderRadius: 8,
     backgroundColor: "#E5E7EB",
     marginBottom: 8,
+    alignItems: "center",
   },
-
   modalButtonActive: {
     backgroundColor: "#1E3A8A",
   },
-
-  modalButtonText: {
-    textAlign: "center",
-    fontWeight: "600",
-    color: "#111827",
-  },
-
   saveButton: {
     marginTop: 12,
     backgroundColor: "#065F46",
     padding: 12,
     borderRadius: 8,
   },
-
   saveButtonText: {
     color: "#FFFFFF",
     textAlign: "center",
     fontWeight: "700",
   },
-
-  cancelButton: {
-    marginTop: 8,
-    padding: 10,
-  },
-
-  cancelButtonText: {
-    textAlign: "center",
-    color: "#374151",
-  },
-
+  cancelButton: { marginTop: 8, alignItems: "center" },
   logout: {
     marginTop: 16,
     backgroundColor: "#991B1B",
     padding: 14,
     borderRadius: 10,
   },
-
   logoutText: {
     color: "#FFFFFF",
     textAlign: "center",

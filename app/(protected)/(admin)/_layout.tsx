@@ -2,10 +2,12 @@ import { Redirect, Slot } from "expo-router";
 import { useAuth } from "../../../src/contexts/AuthContext";
 
 export default function AdminLayout() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
-  if (user?.role !== "ADMIN") {
-    return <Redirect href="/member/dashboard" />;
+  if (loading) return null;
+
+  if (!user || user.role !== "admin") {
+    return <Redirect href="/" />;
   }
 
   return <Slot />;

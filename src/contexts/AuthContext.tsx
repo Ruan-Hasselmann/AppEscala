@@ -1,7 +1,20 @@
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { createContext, useContext, useEffect, useState } from "react";
 import { auth, db } from "../services/firebase";
-import { AppUser } from "../types/User";
 
+type Role = "admin" | "leader" | "member";
+
+type AppUser = {
+  uid: string;
+  name: string;
+  role: Role;
+  ministryId?: string;
+};
 
 type AuthContextType = {
   user: AppUser | null;
@@ -17,53 +30,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   async function login(email: string, password: string) {
-    console.log("🔐 Tentando login:", email);
-    await auth.signInWithEmailAndPassword(email, password);
-    console.log("✅ Login OK");
+    console.log("🟡 [AUTH] login() chamado");
+    await signInWithEmailAndPassword(auth, email, password);
+    console.log("🟢 [AUTH] Firebase autenticou");
   }
-
-
-  async function logout() {
-    await auth.signOut();
-    setUser(null);
-  }
-
 
   useEffect(() => {
-    console.log("👂 Registrando auth listener (compat)");
+    console.log("🔵 [AUTH] Registrando onAuthStateChanged");
 
-    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
-      console.log("🔄 Auth mudou:", firebaseUser?.uid);
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log("🟣 [AUTH] onAuthStateChanged disparou");
+      console.log("👤 firebaseUser:", firebaseUser?.uid);
 
       if (!firebaseUser) {
+        console.log("⚪ [AUTH] Nenhum usuário logado");
         setUser(null);
         setLoading(false);
         return;
       }
 
-      const ref = db.collection("users").doc(firebaseUser.uid);
-      const snap = await ref.get();
+      try {
+        console.log("📥 [AUTH] Buscando Firestore users/", firebaseUser.uid);
 
-      if (snap.exists) {
-        setUser(snap.data() as AppUser);
-      } else {
-        const newUser: AppUser = {
+        const snap = await getDoc(doc(db, "users", firebaseUser.uid));
+
+        if (!snap.exists()) {
+          console.log("❌ [AUTH] Documento não existe");
+          await signOut(auth);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        const data = snap.data();
+        console.log("✅ [AUTH] Dados Firestore:", data);
+
+        setUser({
           uid: firebaseUser.uid,
-          email: firebaseUser.email ?? "",
-          name: firebaseUser.email ?? "Usuário",
-          role: "MEMBER",
-        };
+          name: data.name,
+          role: String(data.role).toLowerCase() as Role,
+          ministryId: data.ministryId,
+        });
 
-        await ref.set(newUser);
-        setUser(newUser);
+        console.log("🟢 [AUTH] user setado com sucesso");
+      } catch (err) {
+        console.error("🔴 [AUTH] Erro:", err);
+        await signOut(auth);
+        setUser(null);
+      } finally {
+        setLoading(false);
+        console.log("🔚 [AUTH] loading = false");
       }
-
-      setLoading(false);
     });
 
-    return unsubscribe;
+    return unsub;
   }, []);
 
+  async function logout() {
+    console.log("👋 [AUTH] logout");
+    await signOut(auth);
+    setUser(null);
+  }
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout }}>
@@ -73,5 +100,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useAuth() {
-  return useContext(AuthContext);
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error("useAuth deve ser usado dentro de AuthProvider");
+  }
+  return ctx;
 }

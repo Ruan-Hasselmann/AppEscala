@@ -6,11 +6,11 @@ export type AvailabilityTurn = {
   night: boolean;
 };
 
-export async function toggleAvailability(
+export async function setAvailabilityForDay(
   userId: string,
   monthKey: string,
   dateKey: string,
-  turn: "morning" | "night"
+  turns: { morning: boolean; night: boolean }
 ) {
   const ref = db
     .collection("availability")
@@ -18,25 +18,14 @@ export async function toggleAvailability(
     .collection(monthKey)
     .doc(dateKey);
 
-  const snap = await ref.get();
-
-  const data: AvailabilityTurn = snap.exists
-    ? (snap.data() as AvailabilityTurn)
-    : { morning: false, night: false };
-
-  const updated: AvailabilityTurn = {
-    ...data,
-    [turn]: !data[turn],
-  };
-
-  // 🧹 Se nenhum turno estiver marcado, remove o documento
-  if (!updated.morning && !updated.night) {
+  if (!turns.morning && !turns.night) {
+    // nenhum turno → remove doc
     await ref.delete();
   } else {
-    // ✅ merge garante que não sobrescreva nada indevido no futuro
-    await ref.set(updated, { merge: true });
+    await ref.set(turns);
   }
 }
+
 
 export async function getUserAvailability(
   userId: string,

@@ -2,19 +2,28 @@ import { Redirect } from "expo-router";
 import { useAuth } from "../src/contexts/AuthContext";
 
 export default function Index() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+
+  // 🔒 BLOQUEIA QUALQUER REDIRECT enquanto carrega
+  if (loading) return null;
 
   if (!user) {
     return <Redirect href="/login" />;
   }
 
-  if (user.role === "ADMIN") {
-    return <Redirect href="/admin/dashboard" />;
+  // 🔥 SEM DEFAULT
+  if (user.role === "admin") {
+    return <Redirect href="/(protected)/(admin)/dashboard" />;
   }
 
-  if (user.role === "LEADER") {
-    return <Redirect href="/leader/dashboard" />;
+  if (user.role === "leader") {
+    return <Redirect href="/(protected)/(leader)/dashboard" />;
   }
 
-  return <Redirect href="/member/dashboard" />;
+  if (user.role === "member") {
+    return <Redirect href="/(protected)/(member)/dashboard" />;
+  }
+
+  // 🚨 fallback de segurança
+  return <Redirect href="/login" />;
 }

@@ -1,7 +1,13 @@
+import AppScreen from "@/src/components/AppScreen";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { useAuth } from "../../src/contexts/AuthContext";
+import {
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity
+} from "react-native";
+import { useAuth } from "../src/contexts/AuthContext";
 
 export default function Login() {
   const { login, user, loading } = useAuth();
@@ -13,27 +19,31 @@ export default function Login() {
 
   async function handleLogin() {
     try {
-      console.log("👉 Cliquei em Entrar");
+      console.log("🟡 [LOGIN] Cliquei em Entrar");
+      console.log("📧 Email:", email);
+
       setError("");
+
       await login(email, password);
-      console.log("⏭ Login retornou sem erro");
+
+      console.log("🟢 [LOGIN] signInWithEmailAndPassword finalizou");
     } catch (err) {
-      console.error("❌ Erro no login:", err);
+      console.error("🔴 [LOGIN] Erro:", err);
       setError("Email ou senha inválidos");
     }
   }
 
   useEffect(() => {
-    console.log("🧭 Login effect:", { loading, user });
+    console.log("🔵 [LOGIN effect]", { loading, user });
 
     if (!loading && user) {
-      console.log("🚀 Navegando para /");
+      console.log("🚀 [LOGIN] Usuário detectado → redirect /");
       router.replace("/");
     }
   }, [user, loading]);
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
       <Text style={styles.title}>Escala App</Text>
 
       <TextInput
@@ -57,13 +67,18 @@ export default function Login() {
       <TouchableOpacity style={styles.button} onPress={handleLogin}>
         <Text style={styles.buttonText}>Entrar</Text>
       </TouchableOpacity>
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: "center", padding: 24 },
-  title: { fontSize: 28, fontWeight: "bold", marginBottom: 32, textAlign: "center" },
+  title: {
+    fontSize: 28,
+    fontWeight: "bold",
+    marginBottom: 32,
+    textAlign: "center",
+  },
   input: {
     borderWidth: 1,
     borderColor: "#ccc",
@@ -77,6 +92,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 8,
   },
-  buttonText: { color: "#fff", textAlign: "center", fontWeight: "bold" },
-  error: { color: "red", textAlign: "center", marginBottom: 8 },
+  buttonText: {
+    color: "#fff",
+    textAlign: "center",
+    fontWeight: "bold",
+  },
+  error: {
+    color: "red",
+    textAlign: "center",
+    marginBottom: 8,
+  },
 });
