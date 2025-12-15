@@ -1,33 +1,30 @@
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
-export type Member = {
-  id: string;
-  name: string;
-  role: "member" | "leader";
-  ministryId: string;
-  active?: boolean;
-};
+export type UserRole = "admin" | "leader" | "member";
 
-/**
- * 🔹 Retorna membros ATIVOS de um ministério
- * Usado no dashboard do líder para montar escala
- */
-export async function getMembersByMinistry(
-  ministryId: string
-): Promise<Member[]> {
-  if (!ministryId) return [];
+export async function getUserRole(uid: string): Promise<UserRole | null> {
+  const ref = doc(db, "users", uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  return snap.data().role ?? null;
+}
 
-  const q = query(
-    collection(db, "people"),
-    where("ministryId", "==", ministryId),
-    where("active", "==", true)
-  );
+export async function setUserRole(uid: string, role: UserRole) {
+  const ref = doc(db, "users", uid);
+  const snap = await getDoc(ref);
 
-  const snapshot = await getDocs(q);
+  if (!snap.exists()) {
+    await setDoc(ref, {
+      role,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return;
+  }
 
-  return snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...(doc.data() as Omit<Member, "id">),
-  }));
+  await updateDoc(ref, {
+    role,
+    updatedAt: serverTimestamp(),
+  });
 }
