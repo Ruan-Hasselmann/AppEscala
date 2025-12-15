@@ -1,8 +1,8 @@
-import AppScreen from "@/src/components/AppScreen";
 import { useEffect, useState } from "react";
 import {
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -113,7 +113,7 @@ export default function MemberDashboard() {
   }
 
   return (
-    <AppScreen>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Disponibilidade</Text>
       <Text style={styles.subtitle}>Selecione quando você pode servir</Text>
 
@@ -254,7 +254,7 @@ export default function MemberDashboard() {
       <TouchableOpacity style={styles.logout} onPress={logout}>
         <Text style={styles.logoutText}>Sair</Text>
       </TouchableOpacity>
-    </AppScreen>
+    </ScrollView>
   );
 }
 

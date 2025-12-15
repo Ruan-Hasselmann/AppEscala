@@ -1,17 +1,20 @@
+import AppBottomNav from "@/src/components/AppBottomNav";
 import { Slot } from "expo-router";
 import { StyleSheet, View } from "react-native";
+import AppScreen from "../../src/components/AppScreen";
 
 export default function ProtectedLayout() {
   return (
-    <View style={styles.container}>
+    <AppScreen>
       <View style={styles.content}>
         <Slot />
       </View>
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { flex: 1 },
+  content: {
+    flex: 1,
+  },
 });

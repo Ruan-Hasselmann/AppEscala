@@ -1,4 +1,3 @@
-import AppScreen from "@/src/components/AppScreen";
 import { useEffect, useState } from "react";
 import {
   Modal,
@@ -129,7 +128,7 @@ export default function LeaderDashboard() {
   }
 
   return (
-    <AppScreen>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Escala do Ministério</Text>
       <Text style={styles.subtitle}>
         Toque apenas em dias com culto para escalar membros
@@ -268,7 +267,7 @@ export default function LeaderDashboard() {
       <TouchableOpacity style={styles.logout} onPress={logout}>
         <Text style={styles.logoutText}>Sair</Text>
       </TouchableOpacity>
-    </AppScreen>
+    </ScrollView>
   );
 }
 

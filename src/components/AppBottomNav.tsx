@@ -3,78 +3,10 @@ import { usePathname, useRouter } from "expo-router";
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
 
-type Role = "admin" | "leader" | "member";
-
 type NavItem = {
   label: string;
-  href: string; // 👈 string livre (rotas futuras OK)
+  href: string; // 👈 string simples (rotas futuras ok)
   icon: keyof typeof Ionicons.glyphMap;
-};
-
-const NAV_ITEMS: Record<Role, NavItem[]> = {
-  member: [
-    {
-      label: "Início",
-      href: "/(protected)/(member)/dashboard",
-      icon: "home-outline",
-    },
-    {
-      label: "Agenda",
-      href: "/(protected)/(member)/calendar", // 🔮 futura
-      icon: "calendar-outline",
-    },
-    {
-      label: "Perfil",
-      href: "/(protected)/profile", // 🔮 futura
-      icon: "person-outline",
-    },
-  ],
-
-  leader: [
-    {
-      label: "Início",
-      href: "/(protected)/(leader)/dashboard",
-      icon: "home-outline",
-    },
-    {
-      label: "Membros",
-      href: "/(protected)/(leader)/members",
-      icon: "people-outline",
-    },
-    {
-      label: "Escalas",
-      href: "/(protected)/(leader)/schedules", // 🔮 futura
-      icon: "calendar-outline",
-    },
-    {
-      label: "Perfil",
-      href: "/(protected)/profile", // 🔮 futura
-      icon: "person-outline",
-    },
-  ],
-
-  admin: [
-    {
-      label: "Início",
-      href: "/(protected)/(admin)/dashboard",
-      icon: "home-outline",
-    },
-    {
-      label: "Ministérios",
-      href: "/(protected)/(admin)/ministries", // 🔮 futura
-      icon: "layers-outline",
-    },
-    {
-      label: "Usuários",
-      href: "/(protected)/(admin)/users", // 🔮 futura
-      icon: "people-outline",
-    },
-    {
-      label: "Config",
-      href: "/(protected)/(admin)/settings", // 🔮 futura
-      icon: "settings-outline",
-    },
-  ],
 };
 
 export default function AppBottomNav() {
@@ -84,7 +16,7 @@ export default function AppBottomNav() {
 
   if (!user) return null;
 
-  const items = NAV_ITEMS[user.role];
+  const items = getNavItems(user.role);
 
   return (
     <View style={styles.safeArea}>
@@ -96,7 +28,7 @@ export default function AppBottomNav() {
             <TouchableOpacity
               key={item.label}
               style={styles.item}
-              onPress={() => router.push(item.href as any)} // 👈 cast consciente
+              onPress={() => router.replace(item.href as any)} // 👈 evita erro TS
             >
               <Ionicons
                 name={item.icon}
@@ -114,32 +46,51 @@ export default function AppBottomNav() {
   );
 }
 
+/* 🔹 Configuração por papel */
+function getNavItems(role: "admin" | "leader" | "member"): NavItem[] {
+  switch (role) {
+    case "admin":
+      return [
+        { label: "Início", href: "/(protected)/(admin)/dashboard", icon: "home" },
+        { label: "Pessoas", href: "/(protected)/(admin)/people", icon: "people" },
+        { label: "Config", href: "/(protected)/(admin)/settings", icon: "settings" },
+      ];
+
+    case "leader":
+      return [
+        { label: "Escala", href: "/(protected)/(leader)/dashboard", icon: "calendar" },
+        { label: "Pessoas", href: "/(protected)/(leader)/people", icon: "people" },
+      ];
+
+    default:
+      return [
+        { label: "Agenda", href: "/(protected)/(member)/dashboard", icon: "calendar" },
+        { label: "Perfil", href: "/(protected)/profile", icon: "person" },
+      ];
+  }
+}
+
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: "#FFFFFF",
     paddingBottom: Platform.OS === "android" ? 24 : 0,
+    backgroundColor: "#FFFFFF",
   },
-
   container: {
     flexDirection: "row",
     height: 64,
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
-    backgroundColor: "#FFFFFF",
   },
-
   item: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-
   label: {
     fontSize: 11,
     color: "#6B7280",
     marginTop: 2,
   },
-
   activeLabel: {
     color: "#1E3A8A",
     fontWeight: "700",

@@ -1,8 +1,8 @@
-import AppScreen from "@/src/components/AppScreen";
 import { useEffect, useState } from "react";
 import {
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -99,7 +99,7 @@ export default function AdminDashboard() {
   }
 
   return (
-    <AppScreen>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Dias de Culto</Text>
       <Text style={styles.subtitle}>
         Toque nos dias para definir quando há culto
@@ -227,7 +227,7 @@ export default function AdminDashboard() {
       <TouchableOpacity style={styles.logout} onPress={logout}>
         <Text style={styles.logoutText}>Sair</Text>
       </TouchableOpacity>
-    </AppScreen>
+    </ScrollView>
   );
 }
 
