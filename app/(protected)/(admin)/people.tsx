@@ -17,6 +17,7 @@ import { useAuth } from "../../../src/contexts/AuthContext";
 import {
   createMembership,
   listMemberships,
+  listMembershipsByPerson,
   Membership,
   MembershipRole,
   MembershipStatus,
@@ -31,6 +32,7 @@ import {
   createPerson,
   listPeople,
   Person,
+  SystemRole,
   updatePerson,
 } from "../../../src/services/people";
 
@@ -113,32 +115,39 @@ export default function AdminPeople() {
   }
 
   async function openEditPerson(p: Person) {
-    // 🔒 proteção absoluta
-    if (memberships.length === 0) {
-      Alert.alert("Aguarde", "Carregando vínculos...");
-      return;
-    }
-
-    setEditingPerson(p);
+    const freshPerson = people.find((x) => x.id === p.id);
+    if (!freshPerson) return;
 
     const personMemberships = memberships.filter(
       (m) => m.personId === p.id && m.status !== "inactive"
     );
 
+    setEditingPerson(freshPerson);
+
     setForm({
-      name: p.name,
-      email: p.email,
-      systemRole: "member", // system role NÃO vem de Person
+      name: freshPerson.name,
+      email: freshPerson.email,
+      systemRole: freshPerson.role, // ✅ AGORA SEMPRE ATUAL
       ministries: personMemberships.map((m) => ({
         ministryId: m.ministryId,
         role: m.role,
       })),
     });
 
-    // 🔹 importante para UX
-    setOpenMinistryId(null);
-
     setModalVisible(true);
+  }
+
+  function calculateSystemRoleFromMemberships(
+    currentRole: SystemRole,
+    memberships: Membership[]
+  ): SystemRole {
+    if (currentRole === "admin") return "admin";
+
+    const hasLeader = memberships.some(
+      (m) => m.role === "leader" && m.status === "active"
+    );
+
+    return hasLeader ? "leader" : "member";
   }
 
   function toggleMinistry(ministryId: string) {
@@ -166,6 +175,7 @@ export default function AdminPeople() {
     }));
   }
 
+
   async function save() {
     const name = form.name.trim();
     const email = form.email.trim().toLowerCase();
@@ -177,43 +187,39 @@ export default function AdminPeople() {
 
     try {
       if (editingPerson) {
-        // ✅ EDIT: só atualiza global, não cria novo
+        // 1️⃣ Atualiza dados básicos
         await updatePerson(editingPerson.id, {
           name,
           email,
-          role: form.systemRole,
         });
 
-        const current = memberships.filter(
-          (m) => m.personId === editingPerson.id
-        );
+        // 2️⃣ Busca memberships atuais DO FIRESTORE
+        const current = await listMembershipsByPerson(editingPerson.id);
 
-        // 1. Criar ou atualizar
+        // 3️⃣ CRIA / ATUALIZA MR
         for (const fm of form.ministries) {
-          const existing = current.find((m) => m.ministryId === fm.ministryId);
+          const existing = current.find(m => m.ministryId === fm.ministryId);
 
           if (!existing) {
-            // novo vínculo
             await createMembership({
               personId: editingPerson.id,
               ministryId: fm.ministryId,
               role: fm.role,
               status: "active",
-              inviteToken: ""
+              inviteToken: "",
             });
           } else {
-            // atualiza role / reativa se necessário
             await updateMembership(existing.id, {
-              role: fm.role,
+              role: fm.role, // 🔥 AGORA SALVA CORRETAMENTE
               status: "active",
             });
           }
         }
 
-        // 2. Desativar os removidos
+        // 4️⃣ DESATIVA OS REMOVIDOS
         for (const old of current) {
           const stillExists = form.ministries.some(
-            (fm) => fm.ministryId === old.ministryId
+            fm => fm.ministryId === old.ministryId
           );
 
           if (!stillExists && old.status !== "inactive") {
@@ -221,31 +227,76 @@ export default function AdminPeople() {
           }
         }
 
+        // 🔄 4️⃣ Recarrega memberships reais
+        await load();
+        const updatedMemberships = await listMembershipsByPerson(editingPerson.id);
+
+        // 🧠 5️⃣ NORMALIZAÇÃO CENTRAL (ÚNICA)
+        let finalSystemRole: SystemRole = form.systemRole;
+
+        // ADMIN É IMUNE
+        if (form.systemRole !== "admin") {
+          const hasLeaderMR = updatedMemberships.some(
+            (m) => m.role === "leader" && m.status === "active"
+          );
+
+          if (form.systemRole === "member") {
+            // 🔻 Member nunca pode liderar ministério
+            for (const m of updatedMemberships) {
+              if (m.role === "leader") {
+                await updateMembership(m.id, { role: "member" });
+              }
+            }
+            finalSystemRole = "member";
+          } else {
+            // leader se existir ao menos um MR leader
+            finalSystemRole = hasLeaderMR ? "leader" : "member";
+          }
+        }
+
+        // 6️⃣ Salva role final no sistema
+        let finalRole: SystemRole;
+
+        // 🔒 Se admin foi alterado manualmente
+        if (editingPerson.role === "admin" && form.systemRole !== "admin") {
+          finalRole = form.systemRole; // decisão soberana
+        } else if (form.systemRole === "member"){
+          finalRole = "member";
+        } else {
+          finalRole = calculateSystemRoleFromMemberships(
+            form.systemRole,
+            updatedMemberships
+          );
+        }
+
+        await updatePerson(editingPerson.id, { role: finalRole });
+
         setModalVisible(false);
         await load();
         Alert.alert("Sucesso", "Pessoa atualizada");
-        return; // ✅ CRÍTICO: impede cair no create
+        return;
       }
 
-      // ✅ CREATE person
-      const personId = await createPerson({ name, email, role: form.systemRole });
+      // CREATE
+      const personId = await createPerson({
+        name,
+        email,
+        role: form.systemRole,
+      });
 
-      // ✅ CREATE memberships (invited por padrão)
-      if (form.ministries.length > 0) {
-        for (const m of form.ministries) {
-          await createMembership({
-            personId,
-            ministryId: m.ministryId,
-            role: m.role,
-            status: "invited",
-            inviteToken: uuidToken(),
-          });
-        }
+      for (const m of form.ministries) {
+        await createMembership({
+          personId,
+          ministryId: m.ministryId,
+          role: m.role,
+          status: "invited",
+          inviteToken: uuidToken(),
+        });
       }
 
       setModalVisible(false);
       await load();
-      Alert.alert("Sucesso", "Pessoa cadastrada (e vínculos criados).");
+      Alert.alert("Sucesso", "Pessoa cadastrada");
     } catch (e: any) {
       Alert.alert("Erro", e?.message ?? "Falha ao salvar");
     }

@@ -28,6 +28,12 @@ export type CreatePersonDTO = {
   role: SystemRole;
 };
 
+export type UpdatePersonDTO = Partial<{
+  name: string;
+  email: string;
+  role: SystemRole;
+}>;
+
 export async function listPeople(): Promise<Person[]> {
   const q = query(collection(db, COL), orderBy("name"));
   const snap = await getDocs(q);
@@ -52,7 +58,10 @@ export async function createPerson(data: CreatePersonDTO): Promise<string> {
 
 export async function updatePerson(
   id: string,
-  data: Partial<Person>
+  data: UpdatePersonDTO
 ) {
-  await updateDoc(doc(db, COL, id), data);
+  await updateDoc(doc(db, COL, id), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
 }
