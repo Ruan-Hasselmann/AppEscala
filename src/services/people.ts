@@ -10,12 +10,14 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 
+export type SystemRole = "admin" | "leader" | "member";
+
 export type Person = {
   id: string;
   name: string;
   email: string;
-  createdAt?: any;
-  updatedAt?: any;
+  role: SystemRole; // 👈 AGORA EXISTE
+  createdAt: number;
 };
 
 const COL = "people";
@@ -23,6 +25,7 @@ const COL = "people";
 export type CreatePersonDTO = {
   name: string;
   email: string;
+  role: SystemRole;
 };
 
 export async function listPeople(): Promise<Person[]> {
@@ -39,6 +42,7 @@ export async function createPerson(data: CreatePersonDTO): Promise<string> {
   const ref = await addDoc(collection(db, COL), {
     name: data.name.trim(),
     email: data.email.trim().toLowerCase(),
+    role: data.role,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -46,10 +50,9 @@ export async function createPerson(data: CreatePersonDTO): Promise<string> {
   return ref.id;
 }
 
-export async function updatePerson(id: string, data: Partial<CreatePersonDTO>) {
-  await updateDoc(doc(db, COL, id), {
-    ...(data.name !== undefined ? { name: data.name.trim() } : {}),
-    ...(data.email !== undefined ? { email: data.email.trim().toLowerCase() } : {}),
-    updatedAt: serverTimestamp(),
-  });
+export async function updatePerson(
+  id: string,
+  data: Partial<Person>
+) {
+  await updateDoc(doc(db, COL, id), data);
 }

@@ -22,8 +22,17 @@ import {
   MembershipStatus,
   updateMembership,
 } from "../../../src/services/memberships";
-import { listActiveMinistries, Ministry, seedDefaultMinistries } from "../../../src/services/ministries";
-import { createPerson, listPeople, Person, updatePerson } from "../../../src/services/people";
+import {
+  listActiveMinistries,
+  Ministry,
+  seedDefaultMinistries,
+} from "../../../src/services/ministries";
+import {
+  createPerson,
+  listPeople,
+  Person,
+  updatePerson,
+} from "../../../src/services/people";
 
 type FormMinistry = {
   ministryId: string;
@@ -41,9 +50,11 @@ type FormState = {
 };
 
 function uuidToken(len = 22) {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let out = "";
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < len; i++)
+    out += chars[Math.floor(Math.random() * chars.length)];
   return out;
 }
 
@@ -60,7 +71,12 @@ export default function AdminPeople() {
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
 
   const [inviteVisible, setInviteVisible] = useState(false);
-  const [inviteMembership, setInviteMembership] = useState<Membership | null>(null);
+  const [inviteMembership, setInviteMembership] = useState<Membership | null>(
+    null
+  );
+
+  // 🔹 UI state (não interfere na lógica)
+  const [openMinistryId, setOpenMinistryId] = useState<string | null>(null);
 
   const [form, setForm] = useState<FormState>({
     name: "",
@@ -97,14 +113,30 @@ export default function AdminPeople() {
   }
 
   async function openEditPerson(p: Person) {
+    // 🔒 proteção absoluta
+    if (memberships.length === 0) {
+      Alert.alert("Aguarde", "Carregando vínculos...");
+      return;
+    }
+
     setEditingPerson(p);
+
+    const personMemberships = memberships.filter(
+      (m) => m.personId === p.id && m.status !== "inactive"
+    );
 
     setForm({
       name: p.name,
       email: p.email,
-      systemRole: "member",
-      ministries: [],
+      systemRole: "member", // system role NÃO vem de Person
+      ministries: personMemberships.map((m) => ({
+        ministryId: m.ministryId,
+        role: m.role,
+      })),
     });
+
+    // 🔹 importante para UX
+    setOpenMinistryId(null);
 
     setModalVisible(true);
   }
@@ -113,16 +145,24 @@ export default function AdminPeople() {
     setForm((prev) => {
       const exists = prev.ministries.find((x) => x.ministryId === ministryId);
       if (exists) {
-        return { ...prev, ministries: prev.ministries.filter((x) => x.ministryId !== ministryId) };
+        return {
+          ...prev,
+          ministries: prev.ministries.filter((x) => x.ministryId !== ministryId),
+        };
       }
-      return { ...prev, ministries: [...prev.ministries, { ministryId, role: "member" }] };
+      return {
+        ...prev,
+        ministries: [...prev.ministries, { ministryId, role: "member" }],
+      };
     });
   }
 
   function setMinistryRole(ministryId: string, role: MembershipRole) {
     setForm((prev) => ({
       ...prev,
-      ministries: prev.ministries.map((x) => (x.ministryId === ministryId ? { ...x, role } : x)),
+      ministries: prev.ministries.map((x) =>
+        x.ministryId === ministryId ? { ...x, role } : x
+      ),
     }));
   }
 
@@ -137,19 +177,60 @@ export default function AdminPeople() {
 
     try {
       if (editingPerson) {
+        // ✅ EDIT: só atualiza global, não cria novo
         await updatePerson(editingPerson.id, {
-          name: form.name,
-          email: form.email,
+          name,
+          email,
+          role: form.systemRole,
         });
 
+        const current = memberships.filter(
+          (m) => m.personId === editingPerson.id
+        );
+
+        // 1. Criar ou atualizar
+        for (const fm of form.ministries) {
+          const existing = current.find((m) => m.ministryId === fm.ministryId);
+
+          if (!existing) {
+            // novo vínculo
+            await createMembership({
+              personId: editingPerson.id,
+              ministryId: fm.ministryId,
+              role: fm.role,
+              status: "active",
+              inviteToken: ""
+            });
+          } else {
+            // atualiza role / reativa se necessário
+            await updateMembership(existing.id, {
+              role: fm.role,
+              status: "active",
+            });
+          }
+        }
+
+        // 2. Desativar os removidos
+        for (const old of current) {
+          const stillExists = form.ministries.some(
+            (fm) => fm.ministryId === old.ministryId
+          );
+
+          if (!stillExists && old.status !== "inactive") {
+            await updateMembership(old.id, { status: "inactive" });
+          }
+        }
+
+        setModalVisible(false);
+        await load();
         Alert.alert("Sucesso", "Pessoa atualizada");
+        return; // ✅ CRÍTICO: impede cair no create
       }
 
+      // ✅ CREATE person
+      const personId = await createPerson({ name, email, role: form.systemRole });
 
-      // CREATE person
-      const personId = await createPerson({ name, email });
-
-      // CREATE memberships (invited por padrão)
+      // ✅ CREATE memberships (invited por padrão)
       if (form.ministries.length > 0) {
         for (const m of form.ministries) {
           await createMembership({
@@ -179,7 +260,6 @@ export default function AdminPeople() {
   }
 
   function buildInviteLink(mem: Membership) {
-    // Link leva membershipId + token (para ativação segura por rules)
     return Linking.createURL("/register", {
       queryParams: {
         membershipId: mem.id,
@@ -213,7 +293,6 @@ export default function AdminPeople() {
   }
 
   const grouped = useMemo(() => {
-    // Agrupa memberships por ministério, ordena por nome
     const byMin: Record<string, Membership[]> = {};
 
     for (const mem of memberships) {
@@ -228,10 +307,13 @@ export default function AdminPeople() {
         return pa.localeCompare(pb);
       });
 
-      return { ministryId, title: ministryNameById(ministryId), memberships: sorted };
+      return {
+        ministryId,
+        title: ministryNameById(ministryId),
+        memberships: sorted,
+      };
     });
 
-    // ordena os ministérios pelo nome
     groups.sort((a, b) => a.title.localeCompare(b.title));
     return groups;
   }, [memberships, people, ministries]);
@@ -258,88 +340,123 @@ export default function AdminPeople() {
     }
   }
 
-  if (loading) return <View style={styles.container}><Text>Carregando…</Text></View>;
+  // Se não tiver nada ainda, não quebra: mostra tela vazia
+  if (loading)
+    return (
+      <View style={styles.container}>
+        <Text>Carregando…</Text>
+      </View>
+    );
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Gerenciar Pessoas</Text>
+      {/* HEADER MOBILE */}
+      <View style={styles.headerRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>Pessoas</Text>
+          <Text style={styles.subtitle}>Gerencie vínculos por ministério</Text>
+        </View>
 
-      <View style={styles.topActions}>
-        <TouchableOpacity style={styles.primary} onPress={openCreate}>
-          <Text style={styles.primaryText}>+ Cadastrar pessoa</Text>
+        <TouchableOpacity style={styles.seedPill} onPress={handleSeedMinistries}>
+          <Text style={styles.seedPillText}>Seed</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.secondary} onPress={handleSeedMinistries}>
-          <Text style={styles.secondaryText}>Seed ministérios</Text>
+        <TouchableOpacity style={styles.fab} onPress={openCreate}>
+          <Text style={styles.fabText}>＋</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView>
-        {grouped.map((g) => (
-          <View key={g.ministryId} style={styles.groupBlock}>
-            <Text style={styles.ministryTitle}>{g.title}</Text>
+      <ScrollView contentContainerStyle={{ paddingBottom: 18 }}>
+        {grouped.map((g) => {
+          const isOpen = openMinistryId === g.ministryId;
 
-            {g.memberships.map((mem) => {
-              const person = personById(mem.personId);
-              if (!person) return null;
+          return (
+            <View key={g.ministryId} style={styles.groupBlock}>
+              <Pressable
+                style={styles.ministryHeader}
+                onPress={() =>
+                  setOpenMinistryId(isOpen ? null : g.ministryId)
+                }
+              >
+                <Text style={styles.ministryTitle}>
+                  {isOpen ? "▼" : "▶"} {g.title}
+                </Text>
+                <View style={styles.countPill}>
+                  <Text style={styles.countText}>{g.memberships.length}</Text>
+                </View>
+              </Pressable>
 
-              return (
-                <View key={mem.id} style={styles.card}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cardTitle}>{person.name}</Text>
-                    <Text style={styles.cardSub}>{person.email}</Text>
+              {isOpen &&
+                g.memberships.map((mem) => {
+                  const person = personById(mem.personId);
+                  if (!person) return null;
 
-                    <View style={styles.badgesRow}>
-                      <View style={[styles.badge, styles.badgeRole]}>
-                        <Text style={styles.badgeText}>{mem.role === "leader" ? "Líder" : "Membro"}</Text>
+                  return (
+                    <View key={mem.id} style={styles.card}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.cardTitle}>{person.name}</Text>
+                        <Text style={styles.cardSub}>{person.email}</Text>
+
+                        <View style={styles.badgesRow}>
+                          <View style={[styles.badge, styles.badgeRole]}>
+                            <Text style={styles.badgeText}>
+                              {mem.role === "leader" ? "Líder" : "Membro"}
+                            </Text>
+                          </View>
+
+                          {mem.status === "invited" && (
+                            <View style={[styles.badge, styles.badgeInvite]}>
+                              <Text style={styles.badgeText}>Convidado</Text>
+                            </View>
+                          )}
+
+                          {mem.status === "active" && (
+                            <View style={[styles.badge, styles.badgeOk]}>
+                              <Text style={styles.badgeText}>Ativo</Text>
+                            </View>
+                          )}
+
+                          {mem.status === "inactive" && (
+                            <View style={[styles.badge, styles.badgeBad]}>
+                              <Text style={styles.badgeText}>Inativo</Text>
+                            </View>
+                          )}
+                        </View>
                       </View>
 
-                      {mem.status === "invited" && (
-                        <View style={[styles.badge, styles.badgeInvite]}>
-                          <Text style={styles.badgeText}>Convidado</Text>
-                        </View>
-                      )}
+                      {/* AÇÕES COMPACTAS (ícones) */}
+                      <View style={styles.actionsCol}>
+                        <TouchableOpacity
+                          style={styles.iconBtn}
+                          onPress={() => openEditPerson(person)}
+                        >
+                          <Text style={styles.icon}>✏️</Text>
+                        </TouchableOpacity>
 
-                      {mem.status === "active" && (
-                        <View style={[styles.badge, styles.badgeOk]}>
-                          <Text style={styles.badgeText}>Ativo</Text>
-                        </View>
-                      )}
+                        {mem.status === "invited" && (
+                          <TouchableOpacity
+                            style={styles.iconBtn}
+                            onPress={() => openInvite(mem)}
+                          >
+                            <Text style={styles.icon}>🔗</Text>
+                          </TouchableOpacity>
+                        )}
 
-                      {mem.status === "inactive" && (
-                        <View style={[styles.badge, styles.badgeBad]}>
-                          <Text style={styles.badgeText}>Inativo</Text>
-                        </View>
-                      )}
+                        <TouchableOpacity
+                          style={styles.iconBtn}
+                          onPress={() => toggleStatus(mem)}
+                        >
+                          <Text style={styles.icon}>
+                            {mem.status === "active" ? "⛔" : "✅"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                  </View>
-
-                  <View style={styles.cardActionsRow}>
-                    <TouchableOpacity style={styles.actionBtn} onPress={() => openEditPerson(person)}>
-                      <Text style={styles.actionText}>Editar</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.actionBtn} onPress={() => toggleRole(mem)}>
-                      <Text style={styles.actionText}>Role</Text>
-                    </TouchableOpacity>
-
-                    {mem.status === "invited" && (
-                      <TouchableOpacity style={styles.actionBtn} onPress={() => openInvite(mem)}>
-                        <Text style={styles.actionText}>Convidar</Text>
-                      </TouchableOpacity>
-                    )}
-
-                    <TouchableOpacity style={styles.actionBtn} onPress={() => toggleStatus(mem)}>
-                      <Text style={styles.actionText}>
-                        {mem.status === "active" ? "Desativar" : "Ativar"}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        ))}
+                  );
+                })}
+            </View>
+          );
+        })}
       </ScrollView>
 
       {/* MODAL CREATE / EDIT */}
@@ -368,77 +485,79 @@ export default function AdminPeople() {
               onChangeText={(t) => setForm((p) => ({ ...p, email: t }))}
             />
 
-            {!editingPerson && (
-              <>
-                <Text style={styles.sectionTitle}>Permissão no sistema</Text>
+            {/* ✅ systemRole também no editar (você pediu escalável) */}
+            <Text style={styles.sectionTitle}>Permissão no sistema</Text>
+            <View style={styles.row}>
+              {(["member", "leader", "admin"] as const).map((r) => (
+                <Pressable
+                  key={r}
+                  style={[styles.roleBtn, form.systemRole === r && styles.roleActive]}
+                  onPress={() => setForm((p) => ({ ...p, systemRole: r }))}
+                >
+                  <Text
+                    style={[
+                      styles.roleText,
+                      form.systemRole === r && { color: "#FFFFFF" },
+                    ]}
+                  >
+                    {r.toUpperCase()}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
 
-                <View style={styles.row}>
-                  {(["member", "leader", "admin"] as const).map((r) => (
-                    <Pressable
-                      key={r}
-                      style={[
-                        styles.roleBtn,
-                        form.systemRole === r && styles.roleActive,
-                      ]}
-                      onPress={() =>
-                        setForm((p) => ({ ...p, systemRole: r }))
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.roleText,
-                          form.systemRole === r && { color: "#FFFFFF" },
-                        ]}
-                      >
-                        {r.toUpperCase()}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
+            <Text style={styles.sectionTitle}>Ministérios (vínculo por ministério)</Text>
 
-                <Text style={styles.sectionTitle}>Ministérios (vínculo por ministério)</Text>
+            <ScrollView style={{ maxHeight: 260 }}>
+              {ministries.map((m) => {
+                const selected = form.ministries.find((x) => x.ministryId === m.id);
 
-                <ScrollView style={{ maxHeight: 260 }}>
-                  {ministries.map((m) => {
-                    const selected = form.ministries.find((x) => x.ministryId === m.id);
+                return (
+                  <Pressable
+                    key={m.id}
+                    style={[styles.ministry, selected && styles.ministryActive]}
+                    onPress={() => toggleMinistry(m.id)}
+                  >
+                    <Text style={[styles.ministryText, selected && { color: "#FFFFFF" }]}>
+                      {m.name}
+                    </Text>
 
-                    return (
-                      <Pressable
-                        key={m.id}
-                        style={[styles.ministry, selected && styles.ministryActive]}
-                        onPress={() => toggleMinistry(m.id)}
-                      >
-                        <Text style={[styles.ministryText, selected && { color: "#FFFFFF" }]}>
-                          {m.name}
-                        </Text>
-
-                        {selected && (
-                          <View style={styles.roleSwitchRow}>
-                            {(["member", "leader"] as const).map((r) => (
-                              <Pressable
-                                key={r}
-                                style={[styles.roleMini, selected.role === r && styles.roleMiniActive]}
-                                onPress={() => setMinistryRole(m.id, r)}
-                              >
-                                <Text style={[styles.roleMiniText, selected.role === r && { color: "#FFFFFF" }]}>
-                                  {r === "leader" ? "Líder" : "Membro"}
-                                </Text>
-                              </Pressable>
-                            ))}
-                          </View>
-                        )}
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              </>
-            )}
+                    {selected && (
+                      <View style={styles.roleSwitchRow}>
+                        {(["member", "leader"] as const).map((r) => (
+                          <Pressable
+                            key={r}
+                            style={[
+                              styles.roleMini,
+                              selected.role === r && styles.roleMiniActive,
+                            ]}
+                            onPress={() => setMinistryRole(m.id, r)}
+                          >
+                            <Text
+                              style={[
+                                styles.roleMiniText,
+                                selected.role === r && { color: "#FFFFFF" },
+                              ]}
+                            >
+                              {r === "leader" ? "Líder" : "Membro"}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
 
             <Pressable style={styles.save} onPress={save}>
               <Text style={styles.saveText}>Salvar</Text>
             </Pressable>
 
-            <Pressable style={styles.cancel} onPress={() => setModalVisible(false)}>
+            <Pressable
+              style={styles.cancel}
+              onPress={() => setModalVisible(false)}
+            >
               <Text>Cancelar</Text>
             </Pressable>
           </View>
@@ -454,20 +573,28 @@ export default function AdminPeople() {
             {inviteMembership && (
               <>
                 <View style={styles.inviteBox}>
-                  <Text style={styles.inviteText}>{buildInviteLink(inviteMembership)}</Text>
+                  <Text style={styles.inviteText}>
+                    {buildInviteLink(inviteMembership)}
+                  </Text>
                 </View>
 
                 <Pressable style={styles.save} onPress={copyInvite}>
                   <Text style={styles.saveText}>Copiar link</Text>
                 </Pressable>
 
-                <Pressable style={[styles.save, { marginTop: 8 }]} onPress={sendWhatsApp}>
+                <Pressable
+                  style={[styles.save, { marginTop: 8 }]}
+                  onPress={sendWhatsApp}
+                >
                   <Text style={styles.saveText}>Enviar WhatsApp</Text>
                 </Pressable>
               </>
             )}
 
-            <Pressable style={styles.cancel} onPress={() => setInviteVisible(false)}>
+            <Pressable
+              style={styles.cancel}
+              onPress={() => setInviteVisible(false)}
+            >
               <Text>Fechar</Text>
             </Pressable>
           </View>
@@ -484,19 +611,79 @@ export default function AdminPeople() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: "#FFFFFF" },
 
-  title: { fontSize: 22, fontWeight: "800", marginBottom: 12 },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+  },
 
-  topActions: { flexDirection: "row", gap: 8, marginBottom: 16 },
+  title: { fontSize: 22, fontWeight: "800" },
+  subtitle: { color: "#6B7280", marginTop: 2 },
 
-  primary: { flex: 1, backgroundColor: "#2563EB", paddingVertical: 14, borderRadius: 12 },
+  // Botão seed compacto
+  seedPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "#E5E7EB",
+  },
+  seedPillText: { fontWeight: "900", color: "#111827" },
+
+  // FAB de cadastro
+  fab: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fabText: { color: "#FFFFFF", fontWeight: "900", fontSize: 22, marginTop: -1 },
+
+  topActions: { flexDirection: "row", gap: 8, marginBottom: 12 },
+
+  primary: {
+    flex: 1,
+    backgroundColor: "#2563EB",
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
   primaryText: { color: "#FFFFFF", fontWeight: "800", textAlign: "center" },
 
-  secondary: { width: 140, backgroundColor: "#E5E7EB", paddingVertical: 14, borderRadius: 12 },
+  secondary: {
+    width: 140,
+    backgroundColor: "#E5E7EB",
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
   secondaryText: { color: "#111827", fontWeight: "800", textAlign: "center" },
 
-  groupBlock: { marginBottom: 8 },
+  groupBlock: { marginBottom: 10 },
 
-  ministryTitle: { fontSize: 16, fontWeight: "900", color: "#111827", marginTop: 16, marginBottom: 8 },
+  ministryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    marginTop: 10,
+  },
+
+  ministryTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#111827",
+  },
+
+  countPill: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  countText: { fontWeight: "900", color: "#111827", fontSize: 12 },
 
   card: {
     flexDirection: "row",
@@ -505,7 +692,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
     borderRadius: 14,
-    padding: 14,
+    padding: 12,
     marginBottom: 10,
   },
 
@@ -521,15 +708,54 @@ const styles = StyleSheet.create({
   badgeOk: { backgroundColor: "#D1FAE5" },
   badgeBad: { backgroundColor: "#FEE2E2" },
 
-  cardActionsRow: { flexDirection: "row", gap: 6, alignItems: "center" },
+  // ações em coluna (mobile)
+  actionsCol: {
+    width: 44,
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 2,
+  },
+  iconBtn: {
+    width: 38,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  icon: { fontSize: 16 },
 
-  actionBtn: { backgroundColor: "#F3F4F6", paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8 },
+  cardActionsRow: { flexDirection: "row", gap: 6, alignItems: "center" },
+  actionBtn: {
+    backgroundColor: "#F3F4F6",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
   actionText: { fontSize: 12, fontWeight: "700", color: "#111827" },
 
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" },
-  modal: { width: "94%", backgroundColor: "#FFFFFF", borderRadius: 16, padding: 18, maxHeight: "90%" },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modal: {
+    width: "94%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 18,
+    maxHeight: "90%",
+  },
 
-  modalTitle: { fontSize: 18, fontWeight: "800", textAlign: "center", marginBottom: 12 },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 12,
+  },
 
   input: {
     borderWidth: 1,
@@ -561,11 +787,8 @@ const styles = StyleSheet.create({
 
   logout: { marginTop: 16, backgroundColor: "#991B1B", paddingVertical: 14, borderRadius: 12 },
   logoutText: { color: "#FFFFFF", fontWeight: "900", textAlign: "center" },
-  row: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 12,
-  },
+
+  row: { flexDirection: "row", gap: 8, marginBottom: 12 },
 
   roleBtn: {
     flex: 1,
@@ -575,13 +798,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  roleActive: {
-    backgroundColor: "#1E3A8A",
-  },
+  roleActive: { backgroundColor: "#1E3A8A" },
 
-  roleText: {
-    fontWeight: "800",
-    color: "#111827",
-  },
-
+  roleText: { fontWeight: "800", color: "#111827" },
 });
