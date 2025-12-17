@@ -24,9 +24,9 @@ import {
   updateMembership,
 } from "../../../src/services/memberships";
 import {
-  listActiveMinistries,
+  listAllMinistries,
   Ministry,
-  seedDefaultMinistries,
+  seedDefaultMinistries
 } from "../../../src/services/ministries";
 import {
   createPerson,
@@ -35,6 +35,7 @@ import {
   SystemRole,
   updatePerson,
 } from "../../../src/services/people";
+import AdminMinistriesModal from "./components/ModalMinistries";
 
 type FormMinistry = {
   ministryId: string;
@@ -68,6 +69,7 @@ export default function AdminPeople() {
   const [ministries, setMinistries] = useState<Ministry[]>([]);
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ministryModalOpen, setMinistryModalOpen] = useState(false);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
@@ -76,6 +78,7 @@ export default function AdminPeople() {
   const [inviteMembership, setInviteMembership] = useState<Membership | null>(
     null
   );
+  const [refreshing, setRefreshing] = useState(false);
 
   // 🔹 UI state (não interfere na lógica)
   const [openMinistryId, setOpenMinistryId] = useState<string | null>(null);
@@ -87,12 +90,14 @@ export default function AdminPeople() {
     ministries: [],
   });
 
-  async function load() {
+  async function load(isFirstLoad = false) {
     try {
-      setLoading(true);
+      if (isFirstLoad) setLoading(true);
+      else setRefreshing(true);
+
       const [p, m, mem] = await Promise.all([
         listPeople(),
-        listActiveMinistries(),
+        listAllMinistries(),
         listMemberships(),
       ]);
 
@@ -101,11 +106,12 @@ export default function AdminPeople() {
       setMemberships(Array.isArray(mem) ? mem : []);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
   useEffect(() => {
-    load();
+    load(true);
   }, []);
 
   function openCreate() {
@@ -135,6 +141,18 @@ export default function AdminPeople() {
     });
 
     setModalVisible(true);
+  }
+
+  async function closeModalAndRefresh() {
+    // 1) fecha o modal (libera a camada de toque)
+    setModalVisible(false);
+    setInviteVisible(false);
+
+    // 2) aguarda 1 frame pra RN desmontar o Modal/backdrop
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    // 3) agora sim recarrega
+    await load();
   }
 
   function calculateSystemRoleFromMemberships(
@@ -260,7 +278,7 @@ export default function AdminPeople() {
         // 🔒 Se admin foi alterado manualmente
         if (editingPerson.role === "admin" && form.systemRole !== "admin") {
           finalRole = form.systemRole; // decisão soberana
-        } else if (form.systemRole === "member"){
+        } else if (form.systemRole === "member") {
           finalRole = "member";
         } else {
           finalRole = calculateSystemRoleFromMemberships(
@@ -271,8 +289,8 @@ export default function AdminPeople() {
 
         await updatePerson(editingPerson.id, { role: finalRole });
 
-        setModalVisible(false);
-        await load();
+        await closeModalAndRefresh();
+
         Alert.alert("Sucesso", "Pessoa atualizada");
         return;
       }
@@ -294,8 +312,8 @@ export default function AdminPeople() {
         });
       }
 
-      setModalVisible(false);
-      await load();
+      await closeModalAndRefresh();
+
       Alert.alert("Sucesso", "Pessoa cadastrada");
     } catch (e: any) {
       Alert.alert("Erro", e?.message ?? "Falha ao salvar");
@@ -399,6 +417,8 @@ export default function AdminPeople() {
       </View>
     );
 
+  console.log("AdminMinistriesModal =", AdminMinistriesModal);
+
   return (
     <View style={styles.container}>
       {/* HEADER MOBILE */}
@@ -408,12 +428,16 @@ export default function AdminPeople() {
           <Text style={styles.subtitle}>Gerencie vínculos por ministério</Text>
         </View>
 
-        <TouchableOpacity style={styles.seedPill} onPress={handleSeedMinistries}>
-          <Text style={styles.seedPillText}>Seed</Text>
+        <TouchableOpacity
+          style={styles.seedPill}
+          onPress={() => setMinistryModalOpen(true)}
+        >
+          <Text style={styles.seedPillText}>Ministérios</Text>
         </TouchableOpacity>
 
+
         <TouchableOpacity style={styles.fab} onPress={openCreate}>
-          <Text style={styles.fabText}>＋</Text>
+          <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
       </View>
 
@@ -511,7 +535,7 @@ export default function AdminPeople() {
       </ScrollView>
 
       {/* MODAL CREATE / EDIT */}
-      <Modal visible={modalVisible} transparent animationType="fade">
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>
@@ -616,7 +640,7 @@ export default function AdminPeople() {
       </Modal>
 
       {/* MODAL CONVITE */}
-      <Modal visible={inviteVisible} transparent animationType="fade">
+      <Modal visible={inviteVisible} transparent animationType="fade" onRequestClose={() => setInviteVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>Convidar</Text>
@@ -651,6 +675,12 @@ export default function AdminPeople() {
           </View>
         </View>
       </Modal>
+      <AdminMinistriesModal
+        visible={ministryModalOpen}
+        onClose={() => setMinistryModalOpen(false)}
+        ministries={ministries}
+        onReload={load}
+      />
 
       <TouchableOpacity style={styles.logout} onPress={logout}>
         <Text style={styles.logoutText}>Sair</Text>

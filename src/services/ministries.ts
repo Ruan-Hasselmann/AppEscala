@@ -1,10 +1,13 @@
 import {
+  addDoc,
   collection,
   doc,
   getDocs,
   orderBy,
   query,
-  setDoc,
+  serverTimestamp,
+  updateDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -16,30 +19,65 @@ export type Ministry = {
 
 const COL = "ministries";
 
-/**
- * Lista ministérios ativos
- */
+export async function listAllMinistries(): Promise<Ministry[]> {
+  const snap = await getDocs(collection(db, COL));
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...(d.data() as Omit<Ministry, "id">),
+  }));
+}
+
+export async function findMinistryByName(name: string): Promise<Ministry | null> {
+  const q = query(
+    collection(db, COL),
+    where("name", "==", name.trim())
+  );
+
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+
+  const d = snap.docs[0];
+  return { id: d.id, ...(d.data() as Omit<Ministry, "id">) };
+}
+
+export async function createMinistry(name: string) {
+  await addDoc(collection(db, COL), {
+    name: name.trim(),
+    active: true,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function activateMinistry(id: string) {
+  await updateDoc(doc(db, COL, id), {
+    active: true,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deactivateMinistry(id: string) {
+  await updateDoc(doc(db, COL, id), {
+    active: false,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export async function listActiveMinistries(): Promise<Ministry[]> {
   const q = query(
     collection(db, COL),
+    where("active", "==", true),
     orderBy("name", "asc")
   );
 
   const snap = await getDocs(q);
 
-  return snap.docs.map((d) => {
-    const data = d.data();
-
-    return {
-      ...data,       // 👈 espalha primeiro
-      id: d.id,      // 👈 id vem por último (correto)
-    } as Ministry;
-  });
+  return snap.docs.map((d) => ({
+    ...(d.data() as Omit<Ministry, "id">),
+    id: d.id,
+  }));
 }
 
-/**
- * Cria ministérios padrão (executar uma vez ou sob demanda)
- */
 export async function seedDefaultMinistries() {
   const defaults = [
     "SUPERVISÃO",
@@ -53,18 +91,13 @@ export async function seedDefaultMinistries() {
     "STORIES",
   ];
 
-  const colRef = collection(db, COL);
-
   for (const name of defaults) {
-    const id = name.toLowerCase();
+    const existing = await findMinistryByName(name);
 
-    await setDoc(
-      doc(colRef, id),
-      {
-        name,
-        active: true,
-      },
-      { merge: true }
-    );
+    if (!existing) {
+      await createMinistry(name);
+    } else if (!existing.active) {
+      await activateMinistry(existing.id);
+    }
   }
 }
