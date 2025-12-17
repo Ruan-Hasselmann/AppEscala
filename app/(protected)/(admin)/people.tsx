@@ -2,7 +2,6 @@ import { setStringAsync } from "expo-clipboard";
 import * as Linking from "expo-linking";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -10,7 +9,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 
 import { useAuth } from "../../../src/contexts/AuthContext";
@@ -35,6 +34,7 @@ import {
   SystemRole,
   updatePerson,
 } from "../../../src/services/people";
+import ConfirmModal from "./components/ConfirmModal";
 import AdminMinistriesModal from "./components/ModalMinistries";
 
 type FormMinistry = {
@@ -73,6 +73,16 @@ export default function AdminPeople() {
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    message?: string;
+    onConfirm?: () => Promise<void> | void;
+  } | null>(null);
+  const sortedMinistries = useMemo(() => {
+    return [...ministries].sort((a, b) =>
+      a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" })
+    );
+  }, [ministries]);
 
   const [inviteVisible, setInviteVisible] = useState(false);
   const [inviteMembership, setInviteMembership] = useState<Membership | null>(
@@ -199,7 +209,7 @@ export default function AdminPeople() {
     const email = form.email.trim().toLowerCase();
 
     if (!name || !email) {
-      Alert.alert("Erro", "Preencha nome e email");
+      setConfirm({ title: "Erro", message: "Preencha nome e email" })
       return;
     }
 
@@ -291,7 +301,7 @@ export default function AdminPeople() {
 
         await closeModalAndRefresh();
 
-        Alert.alert("Sucesso", "Pessoa atualizada");
+        setConfirm({ title: "Sucesso", message: "Pessoa atualizada" });
         return;
       }
 
@@ -314,9 +324,9 @@ export default function AdminPeople() {
 
       await closeModalAndRefresh();
 
-      Alert.alert("Sucesso", "Pessoa cadastrada");
+      setConfirm({ title: "Sucesso", message: "Pessoa cadastrada" });
     } catch (e: any) {
-      Alert.alert("Erro", e?.message ?? "Falha ao salvar");
+      setConfirm({ title: "Erro", message: e?.message ?? "Falha ao salvar" });
     }
   }
 
@@ -346,7 +356,7 @@ export default function AdminPeople() {
     if (!inviteMembership) return;
     const url = buildInviteLink(inviteMembership);
     await setStringAsync(url);
-    Alert.alert("Copiado", "Link copiado para a área de transferência.");
+    setConfirm({ title: "Copiado", message: "Link copiado para a área de transferência." });
   }
 
   async function sendWhatsApp() {
@@ -403,9 +413,9 @@ export default function AdminPeople() {
     try {
       await seedDefaultMinistries();
       await load();
-      Alert.alert("OK", "Ministérios padrão criados/atualizados.");
+      setConfirm({ title: "OK", message: "Ministérios padrão criados/atualizados." });
     } catch (e: any) {
-      Alert.alert("Erro", e?.message ?? "Falha ao criar ministérios.");
+      setConfirm({ title: "Erro", message: e?.message ?? "Falha ao criar ministérios." });
     }
   }
 
@@ -584,7 +594,7 @@ export default function AdminPeople() {
             <Text style={styles.sectionTitle}>Ministérios (vínculo por ministério)</Text>
 
             <ScrollView style={{ maxHeight: 260 }}>
-              {ministries.map((m) => {
+              {sortedMinistries.map((m) => {
                 const selected = form.ministries.find((x) => x.ministryId === m.id);
 
                 return (
@@ -680,6 +690,16 @@ export default function AdminPeople() {
         onClose={() => setMinistryModalOpen(false)}
         ministries={ministries}
         onReload={load}
+      />
+      <ConfirmModal
+        visible={!!confirm}
+        title={confirm?.title ?? ""}
+        message={confirm?.message}
+        onConfirm={async () => {
+          await confirm?.onConfirm?.();
+          setConfirm(null);
+        }}
+        onCancel={() => setConfirm(null)}
       />
 
       <TouchableOpacity style={styles.logout} onPress={logout}>
