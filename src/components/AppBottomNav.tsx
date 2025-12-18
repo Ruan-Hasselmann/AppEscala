@@ -9,11 +9,19 @@ import {
 } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
 
+/* =========================
+   TYPES
+========================= */
+
 type NavItem = {
   label: string;
   href: string;
   icon: keyof typeof Ionicons.glyphMap;
 };
+
+/* =========================
+   COMPONENT
+========================= */
 
 export default function AppBottomNav() {
   const { user } = useAuth();
@@ -28,20 +36,28 @@ export default function AppBottomNav() {
     <View style={styles.safeArea}>
       <View style={styles.container}>
         {items.map((item) => {
-          const active = pathname.startsWith(item.href);
+          const active =
+            pathname === item.href ||
+            pathname.startsWith(item.href + "/");
 
           return (
             <TouchableOpacity
               key={item.label}
               style={styles.item}
-              onPress={() => router.push(item.href as any)}
+              onPress={() => router.replace(item.href as any)}
+              accessibilityRole="button"
             >
               <Ionicons
                 name={item.icon}
                 size={22}
                 color={active ? "#1E3A8A" : "#6B7280"}
               />
-              <Text style={[styles.label, active && styles.activeLabel]}>
+              <Text
+                style={[
+                  styles.label,
+                  active && styles.activeLabel,
+                ]}
+              >
                 {item.label}
               </Text>
             </TouchableOpacity>
@@ -73,6 +89,16 @@ function getNavItems(
           icon: "people",
         },
         {
+          label: "Escalas",
+          href: "/(protected)/(admin)/consolidation",
+          icon: "calendar",
+        },
+        {
+          label: "Diponibildade",
+          href: "/(protected)/(admin)/availability",
+          icon: "checkbox",
+        },
+        {
           label: "Config",
           href: "/(protected)/(admin)/settings",
           icon: "settings",
@@ -82,14 +108,19 @@ function getNavItems(
     case "leader":
       return [
         {
-          label: "Escala",
+          label: "Início",
           href: "/(protected)/(leader)/dashboard",
-          icon: "calendar",
+          icon: "home",
         },
         {
           label: "Pessoas",
           href: "/(protected)/(leader)/people",
           icon: "people",
+        },
+        {
+          label: "Escala",
+          href: "/(protected)/(leader)/schedule",
+          icon: "calendar",
         },
       ];
 
@@ -102,34 +133,42 @@ function getNavItems(
         },
         {
           label: "Perfil",
-          href: "/(protected)/(member)/profile",
+          href: "/(protected)/profile",
           icon: "person",
         },
       ];
   }
 }
 
+/* =========================
+   STYLES
+========================= */
+
 const styles = StyleSheet.create({
   safeArea: {
     paddingBottom: Platform.OS === "android" ? 24 : 0,
     backgroundColor: "#FFFFFF",
   },
+
   container: {
     flexDirection: "row",
     height: 64,
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
   },
+
   item: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
+
   label: {
     fontSize: 11,
     color: "#6B7280",
     marginTop: 2,
   },
+
   activeLabel: {
     color: "#1E3A8A",
     fontWeight: "700",

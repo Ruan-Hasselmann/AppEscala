@@ -1,362 +1,213 @@
-import { useEffect, useState } from "react";
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import CalendarLegend from "../../../src/components/CalendarLegend";
+import { useEffect, useMemo, useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../../../src/contexts/AuthContext";
-import { saveSchedule } from "../../../src/services/schedules";
-import { getServiceDays } from "../../../src/services/serviceDays";
-import { getMembersByMinistry } from "../../../src/services/users";
-import {
-  getCalendarDays,
-  getMonthKey,
-  getMonthName,
-  weekDays,
-} from "../../../src/utils/calendar";
+import { getAvailabilityPeriod } from "../../../src/services/availabilityPeriods";
+import { getMonthKey, getMonthName } from "../../../src/utils/calendar";
 
-type ServiceTurn = {
-  morning: boolean;
-  night: boolean;
-};
+/* =========================
+   HELPERS
+========================= */
 
-type Member = {
-  id: string;
-  name: string;
-};
+function getNextMonth(base = new Date()) {
+  return new Date(base.getFullYear(), base.getMonth() + 1, 1);
+}
+
+/* =========================
+   COMPONENT
+========================= */
 
 export default function LeaderDashboard() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
-  const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth());
+  // 🔒 segurança básica
+  if (!user || user.role !== "leader") return null;
 
-  const monthKey = getMonthKey(new Date(year, month));
-  const days = getCalendarDays(year, month);
+  // 📅 Próximo mês (regra do sistema)
+  const targetDate = useMemo(() => getNextMonth(), []);
+  const year = targetDate.getFullYear();
+  const month = targetDate.getMonth();
+  const monthKey = getMonthKey(targetDate);
+  const monthLabel = getMonthName(year, month);
 
-  const [serviceDays, setServiceDays] = useState<Record<string, ServiceTurn>>(
-    {}
-  );
-  const [members, setMembers] = useState<Member[]>([]);
+  const [availabilityStatus, setAvailabilityStatus] =
+    useState<"open" | "closed" | "unknown">("unknown");
 
-  // 🔹 Modal state
-  const [modalVisible, setModalVisible] = useState(false);
-  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
-  const [selectedTurn, setSelectedTurn] = useState<"morning" | "night">(
-    "morning"
-  );
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const [showTurnSelector, setShowTurnSelector] = useState(false);
-  const [availableTurns, setAvailableTurns] = useState<ServiceTurn>({
-    morning: false,
-    night: false,
-  });
+  /* =========================
+     LOAD
+  ========================= */
 
   useEffect(() => {
     async function load() {
-      if (!user?.ministryId) return;
+      const period = await getAvailabilityPeriod(monthKey);
 
-      const services = await getServiceDays(monthKey);
-      const membersList = await getMembersByMinistry(user.ministryId);
+      if (!period) {
+        setAvailabilityStatus("closed");
+      } else {
+        setAvailabilityStatus(period.status);
+      }
 
-      setServiceDays(services);
-      setMembers(membersList);
+      setLoading(false);
     }
 
     load();
-  }, [user, monthKey]);
+  }, [monthKey]);
 
-  function prevMonth() {
-    setMonth((prev) => (prev === 0 ? 11 : prev - 1));
-    if (month === 0) setYear((y) => y - 1);
-  }
+  /* =========================
+     RENDER
+  ========================= */
 
-  function nextMonth() {
-    setMonth((prev) => (prev === 11 ? 0 : prev + 1));
-    if (month === 11) setYear((y) => y + 1);
-  }
-
-  function openModal(date: Date) {
-    const dateKey = date.toISOString().split("T")[0];
-    const turns = serviceDays[dateKey];
-    if (!turns) return;
-
-    const isSunday = date.getDay() === 0;
-
-    let defaultTurn: "morning" | "night" = "morning";
-    let showSelector = false;
-
-    if (isSunday) {
-      const count =
-        (turns.morning ? 1 : 0) + (turns.night ? 1 : 0);
-
-      if (count > 1) {
-        showSelector = true;
-        defaultTurn = "morning";
-      } else if (turns.night) {
-        defaultTurn = "night";
-      }
-    }
-
-    setSelectedDateKey(dateKey);
-    setSelectedTurn(defaultTurn);
-    setSelectedUserId(null);
-    setAvailableTurns(turns);
-    setShowTurnSelector(showSelector);
-    setModalVisible(true);
-  }
-
-  async function handleSave() {
-    if (!user?.ministryId || !selectedDateKey || !selectedUserId) return;
-
-    await saveSchedule(
-      user.ministryId,
-      monthKey,
-      selectedDateKey,
-      selectedTurn,
-      selectedUserId
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Text>Carregando…</Text>
+      </View>
     );
-
-    setModalVisible(false);
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Escala do Ministério</Text>
+    <View style={styles.container}>
+      {/* HEADER */}
+      <Text style={styles.title}>Dashboard do Líder</Text>
       <Text style={styles.subtitle}>
-        Toque apenas em dias com culto para escalar membros
+        Escala do mês de {monthLabel}
       </Text>
 
-      <View style={styles.headerBlock}>
-        <View style={styles.monthHeader}>
-          <TouchableOpacity onPress={prevMonth} style={styles.arrow}>
-            <Text style={styles.arrowText}>‹</Text>
-          </TouchableOpacity>
+      {/* STATUS CARD */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Disponibilidade</Text>
 
-          <Text style={styles.monthTitle}>
-            {getMonthName(year, month)}
+        {availabilityStatus === "open" ? (
+          <Text style={[styles.statusText, styles.open]}>
+            ✅ Período aberto
           </Text>
+        ) : (
+          <Text style={[styles.statusText, styles.closed]}>
+            🔒 Período fechado
+          </Text>
+        )}
 
-          <TouchableOpacity onPress={nextMonth} style={styles.arrow}>
-            <Text style={styles.arrowText}>›</Text>
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.helperText}>
+          Os membros precisam informar a disponibilidade antes
+          da geração da escala.
+        </Text>
+      </View>
 
-        <CalendarLegend
-          items={[
-            { color: "#0073ffff", label: "Dia de culto" },
-            { color: "#E5E7EB", label: "Sem culto" },
+      {/* ACTIONS */}
+      <View style={styles.actions}>
+        <TouchableOpacity
+          style={[
+            styles.primaryBtn,
+            availabilityStatus !== "open" && styles.disabled,
           ]}
-        />
-      </View>
-
-      <View style={styles.weekRow}>
-        {weekDays.map((day) => (
-          <Text key={day} style={styles.weekDay}>
-            {day}
+          disabled={availabilityStatus !== "open"}
+          onPress={() => {
+            // 👉 próxima tela: gerar escala
+          }}
+        >
+          <Text style={styles.primaryText}>
+            Gerar escala do ministério
           </Text>
-        ))}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.secondaryBtn}
+          onPress={() => {
+            // 👉 futura tela: revisar escala existente
+          }}
+        >
+          <Text style={styles.secondaryText}>
+            Ver escala atual
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      <View style={styles.calendar}>
-        {days.map((date, index) => {
-          if (!date) return <View key={index} style={styles.empty} />;
-
-          const dateKey = date.toISOString().split("T")[0];
-          const turns = serviceDays[dateKey];
-          const hasService = turns?.morning || turns?.night;
-
-          return (
-            <TouchableOpacity
-              key={index}
-              style={[styles.day, hasService && styles.serviceDay]}
-              disabled={!hasService}
-              onPress={() => openModal(date)}
-            >
-              <Text style={styles.dayNumber}>{date.getDate()}</Text>
-
-              {date.getDay() === 0 && hasService && (
-                <View style={styles.turnsColumn}>
-                  {turns.morning && <Text>☀️</Text>}
-                  {turns.night && <Text>🌙</Text>}
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
+      {/* INFO */}
+      <View style={styles.infoBox}>
+        <Text style={styles.infoText}>
+          ℹ️ O admin irá consolidar todas as escalas
+          após a finalização do seu ministério.
+        </Text>
       </View>
-
-      {/* 🔹 MODAL */}
-      <Modal visible={modalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Montar escala</Text>
-
-            {showTurnSelector && (
-              <View style={styles.turnSelector}>
-                {availableTurns.morning && (
-                  <Pressable
-                    style={[
-                      styles.turnButton,
-                      selectedTurn === "morning" && styles.turnActive,
-                    ]}
-                    onPress={() => setSelectedTurn("morning")}
-                  >
-                    <Text>☀️ Manhã</Text>
-                  </Pressable>
-                )}
-
-                {availableTurns.night && (
-                  <Pressable
-                    style={[
-                      styles.turnButton,
-                      selectedTurn === "night" && styles.turnActive,
-                    ]}
-                    onPress={() => setSelectedTurn("night")}
-                  >
-                    <Text>🌙 Noite</Text>
-                  </Pressable>
-                )}
-              </View>
-            )}
-
-            <ScrollView style={{ maxHeight: 220 }}>
-              {members.map((member) => (
-                <Pressable
-                  key={member.id}
-                  style={[
-                    styles.memberItem,
-                    selectedUserId === member.id &&
-                      styles.memberSelected,
-                  ]}
-                  onPress={() => setSelectedUserId(member.id)}
-                >
-                  <Text>{member.name}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-
-            <Pressable
-              style={[
-                styles.saveButton,
-                !selectedUserId && { opacity: 0.5 },
-              ]}
-              disabled={!selectedUserId}
-              onPress={handleSave}
-            >
-              <Text style={styles.saveButtonText}>Salvar escala</Text>
-            </Pressable>
-
-            <Pressable
-              style={styles.cancelButton}
-              onPress={() => setModalVisible(false)}
-            >
-              <Text>Cancelar</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-
-      <TouchableOpacity style={styles.logout} onPress={logout}>
-        <Text style={styles.logoutText}>Sair</Text>
-      </TouchableOpacity>
-    </ScrollView>
+    </View>
   );
 }
 
+/* =========================
+   STYLES
+========================= */
+
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  title: { fontSize: 22, fontWeight: "bold", marginBottom: 4 },
-  subtitle: { color: "#374151", marginBottom: 16 },
-  headerBlock: { marginBottom: 12 },
-  monthHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 8,
+  container: { padding: 16 },
+
+  title: { fontSize: 22, fontWeight: "900" },
+  subtitle: {
+    marginTop: 4,
+    color: "#374151",
+    marginBottom: 16,
   },
-  arrow: { padding: 8 },
-  arrowText: { fontSize: 26, color: "#1E3A8A" },
-  monthTitle: { fontSize: 20, fontWeight: "700" },
-  weekRow: { flexDirection: "row", marginBottom: 8 },
-  weekDay: { width: "14.28%", textAlign: "center", fontWeight: "700" },
-  calendar: { flexDirection: "row", flexWrap: "wrap" },
-  empty: { width: "14.28%", height: 90 },
-  day: {
-    width: "14.28%",
-    minHeight: 90,
-    borderRadius: 10,
-    padding: 4,
-    marginBottom: 8,
-    backgroundColor: "#E5E7EB",
-    alignItems: "center",
-  },
-  serviceDay: { backgroundColor: "#0073ffff" },
-  dayNumber: { fontWeight: "700", marginBottom: 4 },
-  turnsColumn: { alignItems: "center", gap: 6 },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    width: "85%",
-    backgroundColor: "#FFFFFF",
+
+  card: {
+    backgroundColor: "#F3F4F6",
     borderRadius: 12,
-    padding: 16,
+    padding: 14,
+    marginBottom: 16,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 12,
-    textAlign: "center",
-  },
-  turnSelector: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 12,
-  },
-  turnButton: {
-    padding: 10,
-    borderRadius: 8,
-    backgroundColor: "#E5E7EB",
-  },
-  turnActive: { backgroundColor: "#1E3A8A" },
-  memberItem: {
-    padding: 10,
-    borderRadius: 8,
-    backgroundColor: "#E5E7EB",
+  cardTitle: {
+    fontWeight: "900",
     marginBottom: 6,
   },
-  memberSelected: { backgroundColor: "#93C5FD" },
-  saveButton: {
-    marginTop: 12,
-    backgroundColor: "#065F46",
+
+  statusText: {
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+  open: { color: "#065F46" },
+  closed: { color: "#991B1B" },
+
+  helperText: {
+    color: "#374151",
+    fontSize: 13,
+  },
+
+  actions: { gap: 10 },
+
+  primaryBtn: {
+    backgroundColor: "#2563EB",
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  primaryText: {
+    color: "#FFFFFF",
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  secondaryBtn: {
+    backgroundColor: "#E5E7EB",
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  secondaryText: {
+    fontWeight: "900",
+    color: "#111827",
+    textAlign: "center",
+  },
+
+  disabled: {
+    opacity: 0.5,
+  },
+
+  infoBox: {
+    marginTop: 20,
+    backgroundColor: "#EEF2FF",
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 12,
   },
-  saveButtonText: {
-    color: "#FFFFFF",
-    textAlign: "center",
+  infoText: {
+    color: "#1E3A8A",
     fontWeight: "700",
-  },
-  cancelButton: { marginTop: 8, alignItems: "center" },
-  logout: {
-    marginTop: 16,
-    backgroundColor: "#991B1B",
-    padding: 14,
-    borderRadius: 10,
-  },
-  logoutText: {
-    color: "#FFFFFF",
-    textAlign: "center",
-    fontWeight: "700",
+    fontSize: 13,
   },
 });
