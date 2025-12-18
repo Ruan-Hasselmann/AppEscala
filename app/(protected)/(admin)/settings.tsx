@@ -1,3 +1,4 @@
+import { useAuth } from "@/src/contexts/AuthContext";
 import { TIMEZONES } from "@/src/utils/timezones";
 import { useEffect, useState } from "react";
 import {
@@ -25,6 +26,7 @@ const DEFAULT: SystemSettings = {
 };
 
 export default function AdminSettings() {
+    const { logout } = useAuth();
     const [form, setForm] = useState<SystemSettings>(DEFAULT);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -135,6 +137,9 @@ export default function AdminSettings() {
                     {saving ? "Salvando..." : "Salvar configurações"}
                 </Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.logout} onPress={logout}>
+                <Text style={styles.logoutText}>Sair</Text>
+            </TouchableOpacity>
         </ScrollView>
     );
 }
@@ -199,5 +204,12 @@ const styles = StyleSheet.create({
         fontWeight: "800",
         color: "#111827",
     },
+    logout: {
+        marginTop: 16,
+        backgroundColor: "#991B1B",
+        paddingVertical: 14,
+        borderRadius: 12,
+    },
+    logoutText: { color: "#FFFFFF", fontWeight: "900", textAlign: "center" },
 
 });

@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
 import CalendarLegend from "../../../src/components/CalendarLegend";
 import { useAuth } from "../../../src/contexts/AuthContext";
 import {
@@ -55,21 +56,23 @@ export default function AdminDashboard() {
   const monthKey = getMonthKey(new Date(year, month));
   const days = getCalendarDays(year, month);
 
-  const [serviceDays, setServiceDays] = useState<Record<string, ServiceTurn>>(
-    {}
-  );
+  const [serviceDays, setServiceDays] = useState<
+    Record<string, ServiceTurn>
+  >({});
 
-  // 🔹 Modal
   const [modalVisible, setModalVisible] = useState(false);
-  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
-  const [selectedTurns, setSelectedTurns] = useState<ServiceTurn>({
-    morning: false,
-    night: false,
-  });
+  const [selectedDateKey, setSelectedDateKey] =
+    useState<string | null>(null);
+  const [selectedTurns, setSelectedTurns] =
+    useState<ServiceTurn>({
+      morning: false,
+      night: false,
+    });
+
   const [saving, setSaving] = useState(false);
 
   /* =========================
-     LOAD MONTH DATA
+     LOAD
   ========================= */
 
   useEffect(() => {
@@ -81,7 +84,7 @@ export default function AdminDashboard() {
   }, [monthKey]);
 
   /* =========================
-     MONTH NAVIGATION
+     MONTH NAV
   ========================= */
 
   function prevMonth() {
@@ -95,17 +98,17 @@ export default function AdminDashboard() {
   }
 
   /* =========================
-     MODAL CONTROL
+     MODAL
   ========================= */
 
   function openSundayModal(date: Date) {
-    const dateKey = getDateKey(date);
-    const current = serviceDays[dateKey] || {
+    const key = getDateKey(date);
+    const current = serviceDays[key] ?? {
       morning: false,
       night: false,
     };
 
-    setSelectedDateKey(dateKey);
+    setSelectedDateKey(key);
     setSelectedTurns(current);
     setModalVisible(true);
   }
@@ -115,17 +118,25 @@ export default function AdminDashboard() {
 
     setSaving(true);
 
-    const current = serviceDays[selectedDateKey] || {
+    const current = serviceDays[selectedDateKey] ?? {
       morning: false,
       night: false,
     };
 
     if (selectedTurns.morning !== current.morning) {
-      await toggleServiceDay(monthKey, selectedDateKey, "morning");
+      await toggleServiceDay(
+        monthKey,
+        selectedDateKey,
+        "morning"
+      );
     }
 
     if (selectedTurns.night !== current.night) {
-      await toggleServiceDay(monthKey, selectedDateKey, "night");
+      await toggleServiceDay(
+        monthKey,
+        selectedDateKey,
+        "night"
+      );
     }
 
     const updated = await getServiceDays(monthKey);
@@ -147,34 +158,37 @@ export default function AdminDashboard() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Dias de Culto</Text>
-      <Text style={styles.subtitle}>
-        Toque nos dias para definir quando há culto
-      </Text>
-
-      <View style={styles.headerBlock}>
-        <View style={styles.monthHeader}>
-          <TouchableOpacity onPress={prevMonth} style={styles.arrow}>
-            <Text style={styles.arrowText}>‹</Text>
-          </TouchableOpacity>
-
-          <Text style={styles.monthTitle}>
-            {getMonthName(year, month)}
-          </Text>
-
-          <TouchableOpacity onPress={nextMonth} style={styles.arrow}>
-            <Text style={styles.arrowText}>›</Text>
-          </TouchableOpacity>
-        </View>
-
-        <CalendarLegend
-          items={[
-            { color: "#0073ffff", label: "Dia de culto" },
-            { color: "#E5E7EB", label: "Sem culto" },
-          ]}
-        />
+      {/* HEADER */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Dias de Culto</Text>
+        <Text style={styles.subtitle}>
+          Configure os dias em que haverá culto no mês
+        </Text>
       </View>
 
+      {/* MONTH NAV */}
+      <View style={styles.monthNav}>
+        <TouchableOpacity onPress={prevMonth} style={styles.navBtn}>
+          <Text style={styles.navText}>‹</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.monthTitle}>
+          {getMonthName(year, month)}
+        </Text>
+
+        <TouchableOpacity onPress={nextMonth} style={styles.navBtn}>
+          <Text style={styles.navText}>›</Text>
+        </TouchableOpacity>
+      </View>
+
+      <CalendarLegend
+        items={[
+          { color: "#2563EB", label: "Dia com culto" },
+          { color: "#E5E7EB", label: "Sem culto" },
+        ]}
+      />
+
+      {/* WEEK HEADER */}
       <View style={styles.weekRow}>
         {weekDays.map((day) => (
           <Text key={day} style={styles.weekDay}>
@@ -183,25 +197,37 @@ export default function AdminDashboard() {
         ))}
       </View>
 
+      {/* CALENDAR */}
       <View style={styles.calendar}>
         {days.map((date, index) => {
-          if (!date) return <View key={index} style={styles.empty} />;
+          if (!date) {
+            return <View key={index} style={styles.empty} />;
+          }
 
-          const dateKey = getDateKey(date);
-          const turns = serviceDays[dateKey];
-          const hasService = turns?.morning || turns?.night;
+          const key = getDateKey(date);
+          const turns = serviceDays[key];
+          const hasService =
+            turns?.morning || turns?.night;
           const isSunday = date.getDay() === 0;
 
           return (
             <TouchableOpacity
               key={index}
-              style={[styles.day, hasService && styles.serviceDay]}
+              style={[
+                styles.day,
+                hasService && styles.serviceDay,
+              ]}
               onPress={async () => {
                 if (isSunday) {
                   openSundayModal(date);
                 } else {
-                  await toggleServiceDay(monthKey, dateKey, "morning");
-                  const updated = await getServiceDays(monthKey);
+                  await toggleServiceDay(
+                    monthKey,
+                    key,
+                    "morning"
+                  );
+                  const updated =
+                    await getServiceDays(monthKey);
                   setServiceDays(updated);
                 }
               }}
@@ -217,8 +243,12 @@ export default function AdminDashboard() {
 
               {isSunday && hasService && (
                 <View style={styles.turnsColumn}>
-                  {turns.morning && <Text style={styles.icon}>☀️</Text>}
-                  {turns.night && <Text style={styles.icon}>🌙</Text>}
+                  {turns.morning && (
+                    <Text style={styles.icon}>☀️</Text>
+                  )}
+                  {turns.night && (
+                    <Text style={styles.icon}>🌙</Text>
+                  )}
                 </View>
               )}
             </TouchableOpacity>
@@ -226,19 +256,25 @@ export default function AdminDashboard() {
         })}
       </View>
 
-      {/* 🔹 MODAL */}
+      {/* MODAL */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Definir turnos (domingo)</Text>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>
+              Definir turnos (domingo)
+            </Text>
 
             <Pressable
               style={[
-                styles.modalButton,
-                selectedTurns.morning && styles.modalButtonActive,
+                styles.modalBtn,
+                selectedTurns.morning &&
+                styles.modalBtnActive,
               ]}
               onPress={() =>
-                setSelectedTurns((p) => ({ ...p, morning: !p.morning }))
+                setSelectedTurns((p) => ({
+                  ...p,
+                  morning: !p.morning,
+                }))
               }
             >
               <Text>☀️ Manhã</Text>
@@ -246,32 +282,42 @@ export default function AdminDashboard() {
 
             <Pressable
               style={[
-                styles.modalButton,
-                selectedTurns.night && styles.modalButtonActive,
+                styles.modalBtn,
+                selectedTurns.night &&
+                styles.modalBtnActive,
               ]}
               onPress={() =>
-                setSelectedTurns((p) => ({ ...p, night: !p.night }))
+                setSelectedTurns((p) => ({
+                  ...p,
+                  night: !p.night,
+                }))
               }
             >
               <Text>🌙 Noite</Text>
             </Pressable>
 
-            <Pressable style={styles.saveButton} onPress={saveTurns}>
-              <Text style={styles.saveButtonText}>
+            <Pressable
+              style={[
+                styles.saveBtn,
+                saving && { opacity: 0.6 },
+              ]}
+              onPress={saveTurns}
+              disabled={saving}
+            >
+              <Text style={styles.saveText}>
                 {saving ? "Salvando..." : "Salvar"}
               </Text>
             </Pressable>
 
-            <Pressable style={styles.cancelButton} onPress={closeModal}>
+            <Pressable
+              style={styles.cancelBtn}
+              onPress={closeModal}
+            >
               <Text>Cancelar</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
-
-      <TouchableOpacity style={styles.logout} onPress={logout}>
-        <Text style={styles.logoutText}>Sair</Text>
-      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -281,85 +327,84 @@ export default function AdminDashboard() {
 ========================= */
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  title: { fontSize: 22, fontWeight: "bold", marginBottom: 4 },
-  subtitle: { color: "#374151", marginBottom: 16 },
-  headerBlock: { marginBottom: 12 },
-  monthHeader: {
+  container: { padding: 16 },
+
+  header: { marginBottom: 12 },
+  title: { fontSize: 22, fontWeight: "800" },
+  subtitle: { color: "#6B7280", marginTop: 4 },
+
+  monthNav: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  arrow: { padding: 8 },
-  arrowText: { fontSize: 26, color: "#1E3A8A" },
-  monthTitle: { fontSize: 20, fontWeight: "700" },
-  weekRow: { flexDirection: "row", marginBottom: 8 },
-  weekDay: { width: "14.28%", textAlign: "center", fontWeight: "700" },
+  navBtn: { padding: 10 },
+  navText: { fontSize: 26, color: "#1E3A8A" },
+  monthTitle: { fontSize: 18, fontWeight: "800" },
+
+  weekRow: { flexDirection: "row", marginBottom: 6 },
+  weekDay: {
+    width: "14.28%",
+    textAlign: "center",
+    fontWeight: "700",
+  },
+
   calendar: { flexDirection: "row", flexWrap: "wrap" },
-  empty: { width: "14.28%", height: 90 },
+  empty: { width: "14.28%", height: 86 },
+
   day: {
     width: "14.28%",
-    minHeight: 90,
+    minHeight: 86,
     borderRadius: 10,
-    padding: 4,
-    marginBottom: 8,
     backgroundColor: "#E5E7EB",
+    marginBottom: 8,
     alignItems: "center",
+    padding: 4,
   },
-  serviceDay: { backgroundColor: "#0073ffff" },
+  serviceDay: { backgroundColor: "#2563EB" },
+
   dayNumber: { fontWeight: "700", marginBottom: 4 },
-  turnsColumn: { alignItems: "center", gap: 6 },
-  icon: { fontSize: 18 },
+  turnsColumn: { alignItems: "center", gap: 4 },
+  icon: { fontSize: 16 },
+
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "center",
     alignItems: "center",
   },
-  modalContent: {
+  modal: {
     width: "80%",
     backgroundColor: "#FFFFFF",
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "800",
     marginBottom: 12,
     textAlign: "center",
   },
-  modalButton: {
+  modalBtn: {
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: "#E5E7EB",
     marginBottom: 8,
     alignItems: "center",
   },
-  modalButtonActive: {
-    backgroundColor: "#1E3A8A",
-  },
-  saveButton: {
+  modalBtnActive: { backgroundColor: "#1E3A8A" },
+
+  saveBtn: {
     marginTop: 12,
     backgroundColor: "#065F46",
     padding: 12,
-    borderRadius: 8,
-  },
-  saveButtonText: {
-    color: "#FFFFFF",
-    textAlign: "center",
-    fontWeight: "700",
-  },
-  cancelButton: { marginTop: 8, alignItems: "center" },
-  logout: {
-    marginTop: 16,
-    backgroundColor: "#991B1B",
-    padding: 14,
     borderRadius: 10,
   },
-  logoutText: {
+  saveText: {
     color: "#FFFFFF",
     textAlign: "center",
-    fontWeight: "700",
+    fontWeight: "800",
   },
+  cancelBtn: { marginTop: 8, alignItems: "center" },
 });
