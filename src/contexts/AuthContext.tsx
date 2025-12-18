@@ -3,10 +3,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
-import {
-  doc,
-  getDoc
-} from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { createContext, useContext, useEffect, useState } from "react";
 import { auth, db } from "../services/firebase";
 
@@ -43,38 +40,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   /* =========================
-     LOGIN MANUAL
+     LOGIN
   ========================= */
 
   async function login(email: string, password: string) {
-    console.log("🔐 AuthContext.login chamado");
-    console.log("📧 email:", email);
-
-    setLoading(true);
-
-    const cred = await signInWithEmailAndPassword(auth, email, password);
-    console.log("✅ Firebase Auth OK:", cred.user.uid);
-
-    const snap = await getDoc(doc(db, "users", cred.user.uid));
-    console.log("📄 users doc existe?", snap.exists());
-
-    if (!snap.exists()) {
-      console.error("❌ Documento users não existe");
-      await signOut(auth);
-      setLoading(false);
-      throw new Error("Perfil não encontrado");
-    }
-
-    setUser({
-      uid: cred.user.uid,
-      ...(snap.data() as any),
-    });
-
-    console.log("👤 User setado no context");
-
-    setLoading(false);
+    await signInWithEmailAndPassword(auth, email, password);
+    // NÃO seta user
+    // NÃO busca Firestore
+    // Listener resolve tudo
   }
-
 
   /* =========================
      LOGOUT
@@ -86,15 +60,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   /* =========================
-     AUTH LISTENER
+     AUTH LISTENER (única fonte)
   ========================= */
 
   useEffect(() => {
-    console.log("🔄 AuthContext montado");
-
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      console.log("👀 onAuthStateChanged:", firebaseUser?.uid);
-
       if (!firebaseUser) {
         setUser(null);
         setLoading(false);
@@ -102,9 +72,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-      console.log("📄 users doc (listener) existe?", snap.exists());
 
       if (!snap.exists()) {
+        console.warn("⚠️ Usuário autenticado sem perfil");
+        await signOut(auth);
         setUser(null);
         setLoading(false);
         return;
@@ -112,20 +83,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUser({
         uid: firebaseUser.uid,
-        ...(snap.data() as any),
+        ...(snap.data() as Omit<AppUser, "uid">),
       });
 
-      console.log("👤 User restaurado pelo listener");
       setLoading(false);
     });
 
     return unsub;
   }, []);
-
-
-  /* =========================
-     PROVIDER EXPORT
-  ========================= */
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout }}>

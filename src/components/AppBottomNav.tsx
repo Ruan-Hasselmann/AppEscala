@@ -1,11 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
 import { usePathname, useRouter } from "expo-router";
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useAuth } from "../contexts/AuthContext";
 
 type NavItem = {
   label: string;
-  href: string; // 👈 string simples (rotas futuras ok)
+  href: string;
   icon: keyof typeof Ionicons.glyphMap;
 };
 
@@ -28,7 +34,7 @@ export default function AppBottomNav() {
             <TouchableOpacity
               key={item.label}
               style={styles.item}
-              onPress={() => router.replace(item.href as any)} // 👈 evita erro TS
+              onPress={() => router.push(item.href as any)}
             >
               <Ionicons
                 name={item.icon}
@@ -46,26 +52,59 @@ export default function AppBottomNav() {
   );
 }
 
-/* 🔹 Configuração por papel */
-function getNavItems(role: "admin" | "leader" | "member"): NavItem[] {
+/* =========================
+   NAV POR ROLE
+========================= */
+
+function getNavItems(
+  role: "admin" | "leader" | "member"
+): NavItem[] {
   switch (role) {
     case "admin":
       return [
-        { label: "Início", href: "/(protected)/(admin)/dashboard", icon: "home" },
-        { label: "Pessoas", href: "/(protected)/(admin)/people", icon: "people" },
-        { label: "Config", href: "/(protected)/(admin)/settings", icon: "settings" },
+        {
+          label: "Início",
+          href: "/(protected)/(admin)/dashboard",
+          icon: "home",
+        },
+        {
+          label: "Pessoas",
+          href: "/(protected)/(admin)/people",
+          icon: "people",
+        },
+        {
+          label: "Config",
+          href: "/(protected)/(admin)/settings",
+          icon: "settings",
+        },
       ];
 
     case "leader":
       return [
-        { label: "Escala", href: "/(protected)/(leader)/dashboard", icon: "calendar" },
-        { label: "Pessoas", href: "/(protected)/(leader)/people", icon: "people" },
+        {
+          label: "Escala",
+          href: "/(protected)/(leader)/dashboard",
+          icon: "calendar",
+        },
+        {
+          label: "Pessoas",
+          href: "/(protected)/(leader)/people",
+          icon: "people",
+        },
       ];
 
     default:
       return [
-        { label: "Agenda", href: "/(protected)/(member)/dashboard", icon: "calendar" },
-        { label: "Perfil", href: "/(protected)/profile", icon: "person" },
+        {
+          label: "Agenda",
+          href: "/(protected)/(member)/dashboard",
+          icon: "calendar",
+        },
+        {
+          label: "Perfil",
+          href: "/(protected)/(member)/profile",
+          icon: "person",
+        },
       ];
   }
 }

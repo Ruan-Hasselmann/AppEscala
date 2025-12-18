@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -100,4 +101,16 @@ export async function seedDefaultMinistries() {
       await activateMinistry(existing.id);
     }
   }
+}
+
+export async function getMinistryById(id: string): Promise<Ministry | null> {
+  const ref = doc(db, "ministries", id);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) return null;
+
+  return {
+    id: snap.id,
+    ...(snap.data() as Omit<Ministry, "id">),
+  };
 }

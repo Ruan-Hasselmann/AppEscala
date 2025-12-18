@@ -1,111 +1,244 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { useEffect, useState } from "react";
 import {
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-} from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { useState } from "react";
-import {
-  Alert,
+  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
-import { auth, db } from "../src/services/firebase";
+
+import { auth } from "../src/services/firebase";
+import {
+  acceptInvite,
+  getMembershipById,
+} from "../src/services/memberships";
+import { createUserProfile } from "../src/services/users";
+import ConfirmModal from "./(protected)/(admin)/components/ConfirmModal";
 
 export default function Register() {
-  const { personId } = useLocalSearchParams<{ personId: string }>();
+  const { membershipId, token } = useLocalSearchParams<{
+    membershipId?: string;
+    token?: string;
+  }>();
+
   const router = useRouter();
 
+  const [loading, setLoading] = useState(true);
+  const [valid, setValid] = useState(false);
+
+  // 🔐 dados vindos EXCLUSIVAMENTE do convite
+  const [email, setEmail] = useState("");
+  const [membershipEmail, setMembershipEmail] = useState("");
+  const [personName, setPersonName] = useState("");
+  const [ministryName, setMinistryName] = useState("");
+  const [roleLabel, setRoleLabel] = useState("");
+
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [membershipRole, setMembershipRole] = useState<"leader" | "member">("member");
 
-  async function waitForAuth(): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const unsub = onAuthStateChanged(auth, (user) => {
-        if (user) {
-          unsub();
-          resolve(user.uid);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    message?: string;
+  } | null>(null);
+
+  /**
+   * 🔍 Validação do convite
+   */
+  useEffect(() => {
+    async function validateInvite() {
+      try {
+        if (!membershipId || !token) return;
+
+        const mem = await getMembershipById(membershipId);
+
+        if (!mem || mem.status !== "invited" || mem.inviteToken !== token) {
+          return;
         }
+
+        // ✅ FONTE ÚNICA: membership
+        if (!mem.personEmail) return;
+
+        setEmail(mem.personEmail);
+        setMembershipEmail(mem.personEmail);
+        setPersonName(mem.personName ?? "Convidado");
+        setMinistryName(mem.ministryName ?? "");
+        setRoleLabel(mem.role === "leader" ? "Líder" : "Membro");
+        setMembershipRole(mem.role);
+
+        setValid(true);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    validateInvite();
+  }, [membershipId, token]);
+
+  /**
+   * 🧾 Finaliza cadastro
+   */
+  async function handleRegister() {
+    if (!password || password.length < 6) {
+      setConfirm({
+        title: "Senha inválida",
+        message: "A senha deve ter no mínimo 6 caracteres.",
       });
-
-      setTimeout(() => {
-        unsub();
-        reject(new Error("Timeout de autenticação"));
-      }, 8000);
-    });
-  }
-
-  async function register() {
-    if (!personId || !password) {
-      Alert.alert("Erro", "Dados inválidos");
       return;
     }
 
-    setLoading(true);
+    if (password !== confirmPassword) {
+      setConfirm({
+        title: "Erro",
+        message: "As senhas não coincidem.",
+      });
+      return;
+    }
+
+    const finalEmail = membershipEmail || email;
+
+    if (!finalEmail) {
+      setConfirm({
+        title: "Erro",
+        message: "Email do convite não encontrado.",
+      });
+      return;
+    }
 
     try {
-      const ref = doc(db, "people", personId);
-      const snap = await getDoc(ref);
-
-      if (!snap.exists()) {
-        Alert.alert("Erro", "Convite inválido");
-        return;
-      }
-
-      const person = snap.data();
-
-      // 🔐 CRIA USUÁRIO NO AUTH
-      await createUserWithEmailAndPassword(
+      const cred = await createUserWithEmailAndPassword(
         auth,
-        person.email,
+        finalEmail,
         password
       );
 
-      Alert.alert(
-        "Conta criada",
-        "Agora faça login para continuar"
-      );
+      // ✅ ativa o convite
+      await acceptInvite({
+        membershipId: membershipId!,
+        uid: cred.user.uid,
+      });
 
-      router.replace("/login");
+      await createUserProfile({
+        uid: cred.user.uid,
+        email,
+        role: membershipRole === "leader" ? "leader" : "member",
+      })
+
+      setConfirm({
+        title: "Conta criada",
+        message: "Seu cadastro foi concluído com sucesso.",
+      });
+
+      setTimeout(() => {
+        router.replace("/");
+      }, 1200);
     } catch (e: any) {
-      Alert.alert("Erro", e.message);
-    } finally {
-      setLoading(false);
+      setConfirm({
+        title: "Erro",
+        message: e?.message ?? "Falha ao criar conta.",
+      });
     }
   }
 
+  /**
+   * ⏳ Loading
+   */
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
 
+  /**
+   * ❌ Convite inválido
+   */
+  if (!valid) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.error}>Convite inválido ou expirado</Text>
+      </View>
+    );
+  }
+
+  /**
+   * ✅ Tela de registro
+   */
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Ativar conta</Text>
+      <Text style={styles.title}>Finalizar cadastro</Text>
+
+      <View style={styles.infoBox}>
+        <Text style={styles.infoText}>👤 {personName}</Text>
+        <Text style={styles.infoText}>🎯 {ministryName}</Text>
+        <Text style={styles.infoText}>🔑 {roleLabel}</Text>
+      </View>
+
+      <TextInput style={styles.input} value={email} editable={false} />
 
       <TextInput
-        placeholder="Crie uma senha"
-        secureTextEntry
         style={styles.input}
+        placeholder="Senha"
+        secureTextEntry
         value={password}
         onChangeText={setPassword}
       />
 
-      <Pressable
-        style={styles.save}
-        onPress={register}
-        disabled={loading}
-      >
-        <Text style={styles.saveText}>
-          {loading ? "Criando..." : "Criar conta"}
-        </Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Confirmar senha"
+        secureTextEntry
+        value={confirmPassword}
+        onChangeText={setConfirmPassword}
+      />
+
+      <Pressable style={styles.primary} onPress={handleRegister}>
+        <Text style={styles.primaryText}>Criar conta</Text>
       </Pressable>
+
+      <ConfirmModal
+        visible={!!confirm}
+        title={confirm?.title ?? ""}
+        message={confirm?.message}
+        onConfirm={() => setConfirm(null)}
+        onCancel={() => setConfirm(null)}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", padding: 20 },
-  title: { fontSize: 22, fontWeight: "800", marginBottom: 12 },
+  container: {
+    flex: 1,
+    padding: 18,
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  infoBox: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  infoText: {
+    fontWeight: "700",
+    marginBottom: 4,
+  },
   input: {
     borderWidth: 1,
     borderColor: "#E5E7EB",
@@ -113,14 +246,19 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 12,
   },
-  save: {
-    backgroundColor: "#065F46",
-    padding: 16,
+  primary: {
+    backgroundColor: "#2563EB",
+    paddingVertical: 14,
     borderRadius: 12,
+    marginTop: 6,
   },
-  saveText: {
-    color: "#fff",
-    fontWeight: "800",
+  primaryText: {
+    color: "#FFFFFF",
+    fontWeight: "900",
     textAlign: "center",
+  },
+  error: {
+    color: "#DC2626",
+    fontWeight: "800",
   },
 });

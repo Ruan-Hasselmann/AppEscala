@@ -21,10 +21,29 @@ import {
   weekDays,
 } from "../../../src/utils/calendar";
 
+/* =========================
+   TYPES
+========================= */
+
 type ServiceTurn = {
   morning: boolean;
   night: boolean;
 };
+
+/* =========================
+   UTILS
+========================= */
+
+function getDateKey(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/* =========================
+   COMPONENT
+========================= */
 
 export default function AdminDashboard() {
   const { logout } = useAuth();
@@ -47,6 +66,11 @@ export default function AdminDashboard() {
     morning: false,
     night: false,
   });
+  const [saving, setSaving] = useState(false);
+
+  /* =========================
+     LOAD MONTH DATA
+  ========================= */
 
   useEffect(() => {
     async function load() {
@@ -55,6 +79,10 @@ export default function AdminDashboard() {
     }
     load();
   }, [monthKey]);
+
+  /* =========================
+     MONTH NAVIGATION
+  ========================= */
 
   function prevMonth() {
     setMonth((prev) => (prev === 0 ? 11 : prev - 1));
@@ -66,9 +94,16 @@ export default function AdminDashboard() {
     if (month === 11) setYear((y) => y + 1);
   }
 
+  /* =========================
+     MODAL CONTROL
+  ========================= */
+
   function openSundayModal(date: Date) {
-    const dateKey = date.toISOString().split("T")[0];
-    const current = serviceDays[dateKey] || { morning: false, night: false };
+    const dateKey = getDateKey(date);
+    const current = serviceDays[dateKey] || {
+      morning: false,
+      night: false,
+    };
 
     setSelectedDateKey(dateKey);
     setSelectedTurns(current);
@@ -77,6 +112,8 @@ export default function AdminDashboard() {
 
   async function saveTurns() {
     if (!selectedDateKey) return;
+
+    setSaving(true);
 
     const current = serviceDays[selectedDateKey] || {
       morning: false,
@@ -94,9 +131,19 @@ export default function AdminDashboard() {
     const updated = await getServiceDays(monthKey);
     setServiceDays(updated);
 
+    setSaving(false);
+    closeModal();
+  }
+
+  function closeModal() {
     setModalVisible(false);
     setSelectedDateKey(null);
+    setSelectedTurns({ morning: false, night: false });
   }
+
+  /* =========================
+     RENDER
+  ========================= */
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -140,7 +187,7 @@ export default function AdminDashboard() {
         {days.map((date, index) => {
           if (!date) return <View key={index} style={styles.empty} />;
 
-          const dateKey = date.toISOString().split("T")[0];
+          const dateKey = getDateKey(date);
           const turns = serviceDays[dateKey];
           const hasService = turns?.morning || turns?.night;
           const isSunday = date.getDay() === 0;
@@ -153,7 +200,6 @@ export default function AdminDashboard() {
                 if (isSunday) {
                   openSundayModal(date);
                 } else {
-                  // Semana → culto único (morning)
                   await toggleServiceDay(monthKey, dateKey, "morning");
                   const updated = await getServiceDays(monthKey);
                   setServiceDays(updated);
@@ -180,7 +226,7 @@ export default function AdminDashboard() {
         })}
       </View>
 
-      {/* 🔹 MODAL (SOMENTE DOMINGO) */}
+      {/* 🔹 MODAL */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -211,13 +257,12 @@ export default function AdminDashboard() {
             </Pressable>
 
             <Pressable style={styles.saveButton} onPress={saveTurns}>
-              <Text style={styles.saveButtonText}>Salvar</Text>
+              <Text style={styles.saveButtonText}>
+                {saving ? "Salvando..." : "Salvar"}
+              </Text>
             </Pressable>
 
-            <Pressable
-              style={styles.cancelButton}
-              onPress={() => setModalVisible(false)}
-            >
+            <Pressable style={styles.cancelButton} onPress={closeModal}>
               <Text>Cancelar</Text>
             </Pressable>
           </View>
@@ -230,6 +275,10 @@ export default function AdminDashboard() {
     </ScrollView>
   );
 }
+
+/* =========================
+   STYLES
+========================= */
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },

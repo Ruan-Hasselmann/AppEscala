@@ -28,3 +28,7 @@ export async function setUserRole(uid: string, role: UserRole) {
     updatedAt: serverTimestamp(),
   });
 }
+
+export async function createUserProfile({ uid, email, role, }: { uid: string; email: string; role: UserRole; }) {
+  await setDoc(doc(db, "users", uid), { email, role, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), });
+}

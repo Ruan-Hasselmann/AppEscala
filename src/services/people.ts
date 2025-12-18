@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -17,6 +18,7 @@ export type Person = {
   name: string;
   email: string;
   role: SystemRole; // 👈 AGORA EXISTE
+  uid?: string;
   createdAt: number;
 };
 
@@ -32,6 +34,7 @@ export type UpdatePersonDTO = Partial<{
   name: string;
   email: string;
   role: SystemRole;
+  uid: string;
 }>;
 
 export async function listPeople(): Promise<Person[]> {
@@ -64,4 +67,16 @@ export async function updatePerson(
     ...data,
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function getPersonById(id: string): Promise<Person | null> {
+  const ref = doc(db, "people", id);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) return null;
+
+  return {
+    id: snap.id,
+    ...(snap.data() as Omit<Person, "id">),
+  };
 }
