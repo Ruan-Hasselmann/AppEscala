@@ -45,12 +45,34 @@ export type CreateMembershipDTO = Omit<
   inviteToken: string;
 };
 
+const STATUS_ORDER = {
+  active: 0,
+  invited: 1,
+  inactive: 2,
+};
+
+function sortMemberships(a: Membership, b: Membership) {
+  const statusDiff =
+    STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+
+  if (statusDiff !== 0) return statusDiff;
+
+  return (a.personName ?? "").localeCompare(
+    (b.personName ?? ""),
+    "pt-BR",
+    { sensitivity: "base" }
+  );
+}
+
 export async function listMemberships(): Promise<Membership[]> {
   const snap = await getDocs(collection(db, COL));
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...(d.data() as Omit<Membership, "id">),
-  }));
+
+  return snap.docs
+    .map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<Membership, "id">),
+    }))
+    .sort(sortMemberships);
 }
 
 export async function listMembershipsByPerson(personId: string): Promise<Membership[]> {

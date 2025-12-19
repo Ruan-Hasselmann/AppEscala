@@ -10,13 +10,13 @@ import {
   View,
 } from "react-native";
 
-import { auth } from "../src/services/firebase";
+import ConfirmModal from "../../src/components/ConfirmModal";
+import { auth } from "../../src/services/firebase";
 import {
   acceptInvite,
   getMembershipById,
-} from "../src/services/memberships";
-import { createUserProfile } from "../src/services/users";
-import ConfirmModal from "./(protected)/(admin)/components/ConfirmModal";
+} from "../../src/services/memberships";
+import { createUserProfile } from "../../src/services/users";
 
 export default function Register() {
   const { membershipId, token } = useLocalSearchParams<{
@@ -99,7 +99,6 @@ export default function Register() {
     }
 
     const finalEmail = membershipEmail || email;
-
     if (!finalEmail) {
       setConfirm({
         title: "Erro",
@@ -109,32 +108,34 @@ export default function Register() {
     }
 
     try {
+      // 1️⃣ Cria o usuário no Auth
       const cred = await createUserWithEmailAndPassword(
         auth,
         finalEmail,
         password
       );
 
-      // ✅ ativa o convite
+      // 2️⃣ Cria o perfil IMEDIATAMENTE
+      await createUserProfile({
+        uid: cred.user.uid,
+        email: finalEmail,
+        role: membershipRole === "leader" ? "leader" : "member",
+        name: personName,
+      });
+
+      // 3️⃣ Ativa o convite
       await acceptInvite({
         membershipId: membershipId!,
         uid: cred.user.uid,
       });
-
-      await createUserProfile({
-        uid: cred.user.uid,
-        email,
-        role: membershipRole === "leader" ? "leader" : "member",
-      })
 
       setConfirm({
         title: "Conta criada",
         message: "Seu cadastro foi concluído com sucesso.",
       });
 
-      setTimeout(() => {
-        router.replace("/");
-      }, 1200);
+      // 4️⃣ Agora sim navega
+      router.replace("/");
     } catch (e: any) {
       setConfirm({
         title: "Erro",

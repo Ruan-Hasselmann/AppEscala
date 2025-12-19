@@ -1,23 +1,23 @@
 import { useMemo, useState } from "react";
 import {
-    Modal,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import {
-    activateMinistry,
-    createMinistry,
-    deactivateMinistry,
-    findMinistryByName,
-    Ministry,
-    seedDefaultMinistries,
-} from "../../../../src/services/ministries";
+  activateMinistry,
+  createMinistry,
+  deactivateMinistry,
+  findMinistryByName,
+  Ministry,
+  seedDefaultMinistries,
+} from "../services/ministries";
 
 type Props = {
   visible: boolean;

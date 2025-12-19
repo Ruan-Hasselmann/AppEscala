@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useAuth } from "../src/contexts/AuthContext";
+import { useAuth } from "../../src/contexts/AuthContext";
 
 export default function Login() {
   const { login, user, loading } = useAuth();

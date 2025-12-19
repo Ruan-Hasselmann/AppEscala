@@ -18,15 +18,14 @@ export default function ProtectedLayout() {
     if (loading) return;
 
     if (!user) {
-      router.replace("/login");
+      router.replace("/(public)/login");
       return;
     }
 
     const expectedGroup = ROLE_GROUP_MAP[user.role];
-    const currentGroup = segments[1]; // "(admin)" | "(leader)" | "(member)"
+    const currentGroup = segments[1];
 
     if (currentGroup !== expectedGroup) {
-      // redireciona para uma rota REAL
       router.replace(`/(protected)/${expectedGroup}/dashboard` as any);
     }
   }, [loading, user, segments]);
@@ -43,17 +42,12 @@ export default function ProtectedLayout() {
 
   return (
     <AppScreen>
-      <View style={styles.content}>
-        <Slot />
-      </View>
+      <Slot />
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    flex: 1,
-  },
   center: {
     flex: 1,
     justifyContent: "center",
