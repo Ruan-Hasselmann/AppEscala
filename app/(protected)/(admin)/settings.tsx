@@ -1,4 +1,3 @@
-import { useAuth } from "@/src/contexts/AuthContext";
 import { TIMEZONES } from "@/src/utils/timezones";
 import { useEffect, useState } from "react";
 import {
@@ -26,7 +25,6 @@ const DEFAULT: SystemSettings = {
 };
 
 export default function AdminSettings() {
-    const { logout } = useAuth();
     const [form, setForm] = useState<SystemSettings>(DEFAULT);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -136,9 +134,6 @@ export default function AdminSettings() {
                 <Text style={styles.saveText}>
                     {saving ? "Salvando..." : "Salvar configurações"}
                 </Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.logout} onPress={logout}>
-                <Text style={styles.logoutText}>Sair</Text>
             </TouchableOpacity>
         </ScrollView>
     );

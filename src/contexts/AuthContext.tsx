@@ -13,6 +13,7 @@ import { auth, db } from "../services/firebase";
 
 export type AppUser = {
   uid: string;
+  email: string;
   name: string;
   role: "admin" | "leader" | "member";
   ministryIds: string[];
@@ -45,9 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function login(email: string, password: string) {
     await signInWithEmailAndPassword(auth, email, password);
-    // NÃO seta user
-    // NÃO busca Firestore
-    // Listener resolve tudo
+    // listener resolve
   }
 
   /* =========================
@@ -60,30 +59,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   /* =========================
+     HELPER: aguarda perfil
+  ========================= */
+
+  async function waitForUserProfile(
+    uid: string,
+    retries = 6,
+    delay = 500
+  ): Promise<AppUser | null> {
+    for (let i = 0; i < retries; i++) {
+      const snap = await getDoc(doc(db, "users", uid));
+
+      if (snap.exists()) {
+        return {
+          uid,
+          ...(snap.data() as Omit<AppUser, "uid">),
+        };
+      }
+
+      // aguarda um pouco antes de tentar de novo
+      await new Promise((res) => setTimeout(res, delay));
+    }
+
+    return null;
+  }
+
+  /* =========================
      AUTH LISTENER (única fonte)
   ========================= */
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      // 🔒 Não autenticado
       if (!firebaseUser) {
         setUser(null);
         setLoading(false);
         return;
       }
 
-      const snap = await getDoc(doc(db, "users", firebaseUser.uid));
+      // ✅ A PARTIR DAQUI firebaseUser É GARANTIDO
+      const userRef = doc(db, "users", firebaseUser.uid);
+      const snap = await getDoc(userRef);
 
       if (!snap.exists()) {
-        console.warn("⚠️ Usuário autenticado sem perfil");
-        await signOut(auth);
-        setUser(null);
+        console.warn("⚠️ Perfil ainda não disponível, aguardando...");
         setLoading(false);
         return;
       }
 
       setUser({
         uid: firebaseUser.uid,
-        ...(snap.data() as Omit<AppUser, "uid">),
+        email: firebaseUser.email ?? "",
+        ...(snap.data() as Omit<AppUser, "uid" | "email">),
       });
 
       setLoading(false);

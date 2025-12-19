@@ -2,12 +2,12 @@ import {
   addDoc,
   collection,
   doc,
-  getDoc,
   getDocs,
   orderBy,
   query,
   serverTimestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -17,25 +17,16 @@ export type Person = {
   id: string;
   name: string;
   email: string;
-  role: SystemRole; // 👈 AGORA EXISTE
-  uid?: string;
-  createdAt: number;
+  role: SystemRole;
+  createdAt?: any;
+  updatedAt?: any;
 };
 
 const COL = "people";
 
-export type CreatePersonDTO = {
-  name: string;
-  email: string;
-  role: SystemRole;
-};
-
-export type UpdatePersonDTO = Partial<{
-  name: string;
-  email: string;
-  role: SystemRole;
-  uid: string;
-}>;
+/* =========================
+   CRUD
+========================= */
 
 export async function listPeople(): Promise<Person[]> {
   const q = query(collection(db, COL), orderBy("name"));
@@ -47,7 +38,11 @@ export async function listPeople(): Promise<Person[]> {
   }));
 }
 
-export async function createPerson(data: CreatePersonDTO): Promise<string> {
+export async function createPerson(data: {
+  name: string;
+  email: string;
+  role: SystemRole;
+}): Promise<string> {
   const ref = await addDoc(collection(db, COL), {
     name: data.name.trim(),
     email: data.email.trim().toLowerCase(),
@@ -61,7 +56,7 @@ export async function createPerson(data: CreatePersonDTO): Promise<string> {
 
 export async function updatePerson(
   id: string,
-  data: UpdatePersonDTO
+  data: Partial<Omit<Person, "id">>
 ) {
   await updateDoc(doc(db, COL, id), {
     ...data,
@@ -69,14 +64,27 @@ export async function updatePerson(
   });
 }
 
-export async function getPersonById(id: string): Promise<Person | null> {
-  const ref = doc(db, "people", id);
-  const snap = await getDoc(ref);
+/* =========================
+   HELPERS
+========================= */
 
-  if (!snap.exists()) return null;
+/**
+ * 🔑 Resolve a Person pelo email do Auth
+ * (Leader / Member)
+ */
+export async function getPersonByEmail(
+  email: string
+): Promise<Person | null> {
+  const q = query(
+    collection(db, COL),
+    where("email", "==", email.toLowerCase())
+  );
+
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
 
   return {
-    id: snap.id,
-    ...(snap.data() as Omit<Person, "id">),
+    id: snap.docs[0].id,
+    ...(snap.docs[0].data() as Omit<Person, "id">),
   };
 }

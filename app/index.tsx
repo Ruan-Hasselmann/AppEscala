@@ -7,7 +7,7 @@ export default function Index() {
   if (loading) return null;
 
   if (!user) {
-    return <Redirect href="/login" />;
+    return <Redirect href="/(public)/login" />;
   }
 
   switch (user.role) {

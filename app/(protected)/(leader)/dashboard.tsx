@@ -19,10 +19,8 @@ function getNextMonth(base = new Date()) {
 export default function LeaderDashboard() {
   const { user } = useAuth();
 
-  // 🔒 segurança básica
   if (!user || user.role !== "leader") return null;
 
-  // 📅 Próximo mês (regra do sistema)
   const targetDate = useMemo(() => getNextMonth(), []);
   const year = targetDate.getFullYear();
   const month = targetDate.getMonth();
@@ -41,13 +39,7 @@ export default function LeaderDashboard() {
   useEffect(() => {
     async function load() {
       const period = await getAvailabilityPeriod(monthKey);
-
-      if (!period) {
-        setAvailabilityStatus("closed");
-      } else {
-        setAvailabilityStatus(period.status);
-      }
-
+      setAvailabilityStatus(period?.status ?? "closed");
       setLoading(false);
     }
 
@@ -69,28 +61,28 @@ export default function LeaderDashboard() {
   return (
     <View style={styles.container}>
       {/* HEADER */}
-      <Text style={styles.title}>Dashboard do Líder</Text>
+      <Text style={styles.title}>Escala do Ministério</Text>
       <Text style={styles.subtitle}>
-        Escala do mês de {monthLabel}
+        Planejamento de {monthLabel}
       </Text>
 
       {/* STATUS CARD */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Disponibilidade</Text>
+        <Text style={styles.cardTitle}>Disponibilidade dos membros</Text>
 
         {availabilityStatus === "open" ? (
-          <Text style={[styles.statusText, styles.open]}>
+          <Text style={[styles.statusText, styles.statusOpen]}>
             ✅ Período aberto
           </Text>
         ) : (
-          <Text style={[styles.statusText, styles.closed]}>
+          <Text style={[styles.statusText, styles.statusClosed]}>
             🔒 Período fechado
           </Text>
         )}
 
         <Text style={styles.helperText}>
-          Os membros precisam informar a disponibilidade antes
-          da geração da escala.
+          Os membros precisam informar a disponibilidade antes da
+          geração da escala.
         </Text>
       </View>
 
@@ -98,12 +90,12 @@ export default function LeaderDashboard() {
       <View style={styles.actions}>
         <TouchableOpacity
           style={[
-            styles.primaryBtn,
+            styles.primaryButton,
             availabilityStatus !== "open" && styles.disabled,
           ]}
           disabled={availabilityStatus !== "open"}
           onPress={() => {
-            // 👉 próxima tela: gerar escala
+            // próxima tela: gerar escala
           }}
         >
           <Text style={styles.primaryText}>
@@ -112,9 +104,9 @@ export default function LeaderDashboard() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.secondaryBtn}
+          style={styles.secondaryButton}
           onPress={() => {
-            // 👉 futura tela: revisar escala existente
+            // próxima tela: visualizar escala existente
           }}
         >
           <Text style={styles.secondaryText}>
@@ -126,8 +118,8 @@ export default function LeaderDashboard() {
       {/* INFO */}
       <View style={styles.infoBox}>
         <Text style={styles.infoText}>
-          ℹ️ O admin irá consolidar todas as escalas
-          após a finalização do seu ministério.
+          ℹ️ Após finalizar a escala do seu ministério, o admin irá
+          consolidar a escala geral do mês.
         </Text>
       </View>
     </View>
@@ -139,56 +131,79 @@ export default function LeaderDashboard() {
 ========================= */
 
 const styles = StyleSheet.create({
-  container: { padding: 16 },
+  container: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: "#FFFFFF",
+  },
 
-  title: { fontSize: 22, fontWeight: "900" },
+  title: {
+    fontSize: 22,
+    fontWeight: "900",
+  },
+
   subtitle: {
     marginTop: 4,
-    color: "#374151",
+    color: "#6B7280",
     marginBottom: 16,
   },
 
   card: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 12,
-    padding: 14,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
     marginBottom: 16,
   },
+
   cardTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    marginBottom: 6,
+    color: "#111827",
+  },
+
+  statusText: {
     fontWeight: "900",
     marginBottom: 6,
   },
 
-  statusText: {
-    fontWeight: "800",
-    marginBottom: 6,
+  statusOpen: {
+    color: "#065F46",
   },
-  open: { color: "#065F46" },
-  closed: { color: "#991B1B" },
+
+  statusClosed: {
+    color: "#991B1B",
+  },
 
   helperText: {
     color: "#374151",
     fontSize: 13,
   },
 
-  actions: { gap: 10 },
+  actions: {
+    gap: 10,
+  },
 
-  primaryBtn: {
-    backgroundColor: "#2563EB",
+  primaryButton: {
+    backgroundColor: "#065F46",
     paddingVertical: 14,
     borderRadius: 12,
   },
+
   primaryText: {
     color: "#FFFFFF",
     fontWeight: "900",
     textAlign: "center",
   },
 
-  secondaryBtn: {
+  secondaryButton: {
     backgroundColor: "#E5E7EB",
     paddingVertical: 14,
     borderRadius: 12,
   },
+
   secondaryText: {
     fontWeight: "900",
     color: "#111827",
@@ -205,6 +220,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
   },
+
   infoText: {
     color: "#1E3A8A",
     fontWeight: "700",

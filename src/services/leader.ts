@@ -18,12 +18,10 @@ export async function listLeaderPeople(
     .filter(
       (m) =>
         m.ministryId === ministryId &&
-        m.status !== "inactive"
+        m.status === "active"
     )
     .map((m) => {
-      const person = people.find(
-        (p) => p.id === m.personId
-      );
+      const person = people.find((p) => p.id === m.personId);
       if (!person) return null;
       return { person, membership: m };
     })

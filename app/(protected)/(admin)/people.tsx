@@ -12,6 +12,8 @@ import {
   View,
 } from "react-native";
 
+import ConfirmModal from "@/src/components/ConfirmModal";
+import AdminMinistriesModal from "@/src/components/ModalMinistries";
 import { useAuth } from "../../../src/contexts/AuthContext";
 import {
   createMembership,
@@ -32,8 +34,6 @@ import {
   SystemRole,
   updatePerson,
 } from "../../../src/services/people";
-import ConfirmModal from "./components/ConfirmModal";
-import AdminMinistriesModal from "./components/ModalMinistries";
 
 /* =========================
    TYPES
@@ -172,6 +172,10 @@ export default function AdminPeople() {
     setModalVisible(true);
   }
 
+  function isValidEmail(email: string) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
   async function openEditPerson(p: Person) {
     const personMemberships = memberships.filter(
       (m) => m.personId === p.id && m.status !== "inactive"
@@ -240,6 +244,14 @@ export default function AdminPeople() {
 
     if (!name || !email) {
       setConfirm({ title: "Erro", message: "Preencha nome e email" });
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      setConfirm({
+        title: "Email inválido",
+        message: "Informe um endereço de email válido.",
+      });
       return;
     }
 
@@ -350,7 +362,8 @@ export default function AdminPeople() {
   async function copyInvite() {
     if (!inviteMembership) return;
     await setStringAsync(buildInviteLink(inviteMembership));
-    setConfirm({ title: "Copiado", message: "Link copiado." });
+    //setConfirm({ title: "Copiado", message: "Link copiado." });
+    setInviteVisible(false);
   }
 
   async function sendWhatsApp() {
@@ -431,7 +444,7 @@ export default function AdminPeople() {
                   if (!person) return null;
 
                   return (
-                    <View key={mem.id} style={[styles.card, mem.status === "inactive" && {opacity: 0.5}]}>
+                    <View key={mem.id} style={[styles.card, mem.status === "inactive" && { opacity: 0.5 }]}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.cardTitle}>
                           {person.name}
@@ -521,7 +534,12 @@ export default function AdminPeople() {
             />
 
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                form.email && !isValidEmail(form.email) && {
+                  borderColor: "#DC2626",
+                },
+              ]}
               placeholder="Email"
               autoCapitalize="none"
               keyboardType="email-address"
