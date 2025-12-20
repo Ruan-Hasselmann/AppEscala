@@ -129,7 +129,17 @@ function getNavItems(
         {
           label: "Agenda",
           href: "/(protected)/(member)/dashboard",
+          icon: "home",
+        },
+        {
+          label: "Escala",
+          href: "/(protected)/(member)/schedule",
           icon: "calendar",
+        },
+        {
+          label: "Disponibilidade",
+          href: "/(protected)/(member)/availability",
+          icon: "home",
         },
         {
           label: "Perfil",

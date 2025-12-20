@@ -47,6 +47,7 @@ export default function Login() {
       <TextInput
         placeholder="Email"
         placeholderTextColor="#6B7280"
+        keyboardType="email-address"
         autoCapitalize="none"
         style={styles.input}
         value={email}

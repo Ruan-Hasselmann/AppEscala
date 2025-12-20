@@ -26,7 +26,9 @@ export default function ProtectedLayout() {
     const currentGroup = segments[1];
 
     if (currentGroup !== expectedGroup) {
-      router.replace(`/(protected)/${expectedGroup}/dashboard` as any);
+      router.replace(
+        `/(protected)/${expectedGroup}/dashboard` as any
+      );
     }
   }, [loading, user, segments]);
 

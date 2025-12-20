@@ -541,6 +541,7 @@ export default function AdminPeople() {
                 },
               ]}
               placeholder="Email"
+              placeholderTextColor="#6B7280"
               autoCapitalize="none"
               keyboardType="email-address"
               value={form.email}

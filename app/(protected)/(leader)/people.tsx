@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useAuth } from "../../../src/contexts/AuthContext";
 import { LeaderPerson, listLeaderPeople } from "../../../src/services/leader";
 import { listMembershipsByPerson } from "../../../src/services/memberships";
-import { listAllMinistries, Ministry } from "../../../src/services/ministries";
+import { listActiveMinistries, Ministry } from "../../../src/services/ministries";
 import { getPersonByEmail } from "../../../src/services/people";
 
 /* =========================
@@ -29,6 +29,7 @@ export default function LeaderPeople() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     async function load() {
       try {
         if (!user?.email) {
@@ -58,7 +59,7 @@ export default function LeaderPeople() {
           return;
         }
 
-        const allMinistries = await listAllMinistries();
+        const allMinistries = await listActiveMinistries();
         const leaderMinistries = allMinistries.filter((m) =>
           leaderMinistryIds.includes(m.id)
         );
@@ -70,13 +71,16 @@ export default function LeaderPeople() {
           result.push({ ministry, people });
         }
 
-        setGroups(result);
+        if (active) setGroups(result);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
 
     load();
+    return () => {
+      active = false;
+    };
   }, [user]);
 
   /* =========================

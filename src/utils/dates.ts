@@ -9,3 +9,18 @@ export function getDaysOfMonth(year: number, month: number) {
 
   return days;
 }
+
+/**
+ * Converte YYYY-MM-DD em Date LOCAL sem timezone bug
+ */
+export function parseLocalDate(date: string): Date {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/**
+ * Formata YYYY-MM-DD para pt-BR
+ */
+export function formatDateBR(date: string): string {
+  return parseLocalDate(date).toLocaleDateString("pt-BR");
+}

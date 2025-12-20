@@ -12,6 +12,7 @@ import { auth, db } from "../services/firebase";
 ========================= */
 
 export type AppUser = {
+  personId: string;
   uid: string;
   email: string;
   name: string;
@@ -25,6 +26,8 @@ type AuthContextType = {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 };
+
+export type UserProfile = Omit<AppUser, "uid" | "email">;
 
 /* =========================
    CONTEXT
@@ -55,7 +58,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function logout() {
     await signOut(auth);
-    setUser(null);
   }
 
   /* =========================
@@ -66,18 +68,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     uid: string,
     retries = 6,
     delay = 500
-  ): Promise<AppUser | null> {
+  ): Promise<UserProfile | null> {
     for (let i = 0; i < retries; i++) {
       const snap = await getDoc(doc(db, "users", uid));
 
       if (snap.exists()) {
-        return {
-          uid,
-          ...(snap.data() as Omit<AppUser, "uid">),
-        };
+        return snap.data() as UserProfile;
       }
 
-      // aguarda um pouco antes de tentar de novo
       await new Promise((res) => setTimeout(res, delay));
     }
 
@@ -98,19 +96,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // ✅ A PARTIR DAQUI firebaseUser É GARANTIDO
-      const userRef = doc(db, "users", firebaseUser.uid);
-      const snap = await getDoc(userRef);
+      const profile = await waitForUserProfile(firebaseUser.uid);
 
-      if (!snap.exists()) {
-        console.warn("⚠️ Perfil ainda não disponível, aguardando...");
+      if (!profile) {
+        console.error("❌ Perfil não encontrado após tentativas");
+        setUser(null);
         setLoading(false);
         return;
       }
 
       setUser({
+        ...profile,
         uid: firebaseUser.uid,
         email: firebaseUser.email ?? "",
-        ...(snap.data() as Omit<AppUser, "uid" | "email">),
       });
 
       setLoading(false);

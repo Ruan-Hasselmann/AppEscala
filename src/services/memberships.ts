@@ -82,7 +82,7 @@ export async function listMembershipsByPerson(personId: string): Promise<Members
   return snap.docs.map((d) => ({
     id: d.id,
     ...(d.data() as Omit<Membership, "id">),
-  }));
+  })).sort(sortMemberships);
 }
 
 export async function createMembership(data: CreateMembershipDTO): Promise<string> {
