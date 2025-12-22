@@ -1,142 +1,170 @@
+// src/services/memberships.ts
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
   getDocs,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
-import { db } from "./firebase";
 
-export type MembershipRole = "member" | "leader";
+import { db } from "@/src/services/firebase";
+
+/* =========================
+   TYPES
+========================= */
+
+export type MembershipRole = "leader" | "member";
 export type MembershipStatus = "invited" | "active" | "inactive";
 
 export type Membership = {
   id: string;
   personId: string;
   ministryId: string;
+
   role: MembershipRole;
   status: MembershipStatus;
 
-  // ✅ dados "congelados" para o fluxo de convite (register público)
-  personEmail?: string;
-  personName?: string;
-  ministryName?: string;
+  // dados desnormalizados (UX / performance)
+  personName: string;
+  personEmail: string;
+  ministryName: string;
 
   inviteToken?: string;
-  invitedAt?: any;
-
-  activatedAt?: any;
-  activatedByUid?: string;
 
   createdAt?: any;
   updatedAt?: any;
 };
 
-const COL = "memberships";
+export type CreateMembershipInput = {
+  personId: string;
+  ministryId: string;
+  role?: MembershipRole;
+  status?: MembershipStatus;
 
-export type CreateMembershipDTO = Omit<
-  Membership,
-  "id" | "createdAt" | "updatedAt" | "invitedAt" | "activatedAt"
-> & {
-  inviteToken: string;
+  personName: string;
+  personEmail: string;
+  ministryName: string;
+
+  inviteToken?: string;
 };
 
-const STATUS_ORDER = {
-  active: 0,
-  invited: 1,
-  inactive: 2,
-};
+export type UpdateMembershipInput = Partial<
+  Pick<
+    Membership,
+    | "role"
+    | "status"
+    | "personName"
+    | "personEmail"
+    | "ministryName"
+    | "inviteToken"
+  >
+>;
 
-function sortMemberships(a: Membership, b: Membership) {
-  const statusDiff =
-    STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+/* =========================
+   COLLECTION
+========================= */
 
-  if (statusDiff !== 0) return statusDiff;
+const COLLECTION = "memberships";
 
-  return (a.personName ?? "").localeCompare(
-    (b.personName ?? ""),
-    "pt-BR",
-    { sensitivity: "base" }
-  );
+/* =========================
+   CREATE
+========================= */
+
+export async function createMembership(
+  input: CreateMembershipInput
+) {
+  const ref = doc(collection(db, COLLECTION));
+
+  const data = {
+    personId: input.personId,
+    ministryId: input.ministryId,
+
+    role: input.role ?? "member",
+    status: input.status ?? "invited",
+
+    personName: input.personName,
+    personEmail: input.personEmail,
+    ministryName: input.ministryName,
+
+    inviteToken: input.inviteToken ?? "",
+
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  await setDoc(ref, data);
+}
+
+/* =========================
+   READ
+========================= */
+
+export async function getMembershipById(
+  id: string
+): Promise<Membership | null> {
+  const ref = doc(db, COLLECTION, id);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) return null;
+
+  return {
+    id: snap.id,
+    ...(snap.data() as Omit<Membership, "id">),
+  };
 }
 
 export async function listMemberships(): Promise<Membership[]> {
-  const snap = await getDocs(collection(db, COL));
+  const ref = collection(db, COLLECTION);
+  const snap = await getDocs(ref);
 
-  return snap.docs
-    .map((d) => ({
-      id: d.id,
-      ...(d.data() as Omit<Membership, "id">),
-    }))
-    .sort(sortMemberships);
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...(d.data() as Omit<Membership, "id">),
+  }));
 }
 
-export async function listMembershipsByPerson(personId: string): Promise<Membership[]> {
-  const q = query(collection(db, COL), where("personId", "==", personId));
+export async function listMembershipsByPerson(
+  personId: string
+): Promise<Membership[]> {
+  const ref = collection(db, COLLECTION);
+  const q = query(ref, where("personId", "==", personId));
   const snap = await getDocs(q);
 
   return snap.docs.map((d) => ({
     id: d.id,
     ...(d.data() as Omit<Membership, "id">),
-  })).sort(sortMemberships);
+  }));
 }
 
-export async function createMembership(data: CreateMembershipDTO): Promise<string> {
-  const ref = await addDoc(collection(db, COL), {
-    personId: data.personId,
-    ministryId: data.ministryId,
-    role: data.role,
-    status: data.status,
+export async function listMembershipsByMinistry(
+  ministryId: string
+): Promise<Membership[]> {
+  const ref = collection(db, COLLECTION);
+  const q = query(ref, where("ministryId", "==", ministryId));
+  const snap = await getDocs(q);
 
-    // ✅ grava dados pro register não depender de outras coleções
-    personEmail: data.personEmail ?? "",
-    personName: data.personName ?? "",
-    ministryName: data.ministryName ?? "",
-
-    inviteToken: data.inviteToken,
-    invitedAt: serverTimestamp(),
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-
-  return ref.id;
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...(d.data() as Omit<Membership, "id">),
+  }));
 }
+
+/* =========================
+   UPDATE
+========================= */
 
 export async function updateMembership(
   id: string,
-  data: Partial<Omit<Membership, "id" | "createdAt">>
+  input: UpdateMembershipInput
 ) {
-  await updateDoc(doc(db, COL, id), {
-    ...data,
-    updatedAt: serverTimestamp(),
-  });
-}
-
-export async function getMembershipById(id: string) {
-  const ref = doc(db, COL, id);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return null;
-  return { id: snap.id, ...snap.data() } as Membership;
-}
-
-export async function acceptInvite({
-  membershipId,
-  uid,
-}: {
-  membershipId: string;
-  uid: string;
-}) {
-  const ref = doc(db, COL, membershipId);
+  const ref = doc(db, COLLECTION, id);
 
   await updateDoc(ref, {
-    status: "active",
-    inviteToken: "",
-    activatedAt: serverTimestamp(),
-    activatedByUid: uid,
+    ...input,
     updatedAt: serverTimestamp(),
   });
 }

@@ -1,52 +1,109 @@
-import { db } from "./firebase";
+// src/services/serviceDays.ts
+import {
+  doc,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
+
+import { db } from "@/src/services/firebase";
+
+/* =========================
+   TYPES
+========================= */
 
 export type ServiceTurn = {
   morning: boolean;
   night: boolean;
 };
 
+export type ServiceDaysMap = Record<string, ServiceTurn>;
+
+/* =========================
+   HELPERS
+========================= */
+
+function monthKeyFromDate(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+/* =========================
+   COLLECTION
+========================= */
+
+const COLLECTION = "serviceDays";
+
+/* =========================
+   READ
+========================= */
+
+export async function getServiceDays(
+  monthKey: string
+): Promise<ServiceDaysMap> {
+  const ref = doc(db, COLLECTION, monthKey);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) return {};
+
+  return snap.data()?.days ?? {};
+}
+
+/* =========================
+   WRITE
+========================= */
+
 export async function toggleServiceDay(
   monthKey: string,
   dateKey: string,
-  turn: "morning" | "night"
+  turn: keyof ServiceTurn
 ) {
-  const ref = db
-    .collection("services_days")
-    .doc(monthKey)
-    .collection("dates")
-    .doc(dateKey);
+  const ref = doc(db, COLLECTION, monthKey);
+  const snap = await getDoc(ref);
 
-  const snap = await ref.get();
+  if (!snap.exists()) {
+    const initial: ServiceDaysMap = {
+      [dateKey]: {
+        morning: turn === "morning",
+        night: turn === "night",
+      },
+    };
 
-  const data: ServiceTurn = snap.exists
-    ? (snap.data() as ServiceTurn)
-    : { morning: false, night: false };
+    await setDoc(ref, {
+      monthKey,
+      days: initial,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
 
-  const updated = {
-    ...data,
-    [turn]: !data[turn],
+    return;
+  }
+
+  const data = snap.data();
+  const days: ServiceDaysMap = data.days ?? {};
+
+  const current = days[dateKey] ?? {
+    morning: false,
+    night: false,
   };
 
-  // Se nenhum turno estiver ativo, remove o dia
-  if (!updated.morning && !updated.night) {
-    await ref.delete();
-  } else {
-    await ref.set(updated);
-  }
+  days[dateKey] = {
+    ...current,
+    [turn]: !current[turn],
+  };
+
+  await updateDoc(ref, {
+    days,
+    updatedAt: serverTimestamp(),
+  });
 }
 
-export async function getServiceDays(monthKey: string) {
-  const snapshot = await db
-    .collection("services_days")
-    .doc(monthKey)
-    .collection("dates")
-    .get();
+/* =========================
+   UTILS
+========================= */
 
-  const days: Record<string, ServiceTurn> = {};
-
-  snapshot.forEach((doc) => {
-    days[doc.id] = doc.data() as ServiceTurn;
-  });
-
-  return days;
+export function buildMonthKey(date = new Date()) {
+  return monthKeyFromDate(date);
 }

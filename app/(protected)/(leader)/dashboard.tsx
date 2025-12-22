@@ -1,16 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+// src/app/(leader)/dashboard.tsx
+import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useAuth } from "../../../src/contexts/AuthContext";
-import { getAvailabilityPeriod } from "../../../src/services/availabilityPeriods";
-import { getMonthKey, getMonthName } from "../../../src/utils/calendar";
 
-/* =========================
-   HELPERS
-========================= */
-
-function getNextMonth(base = new Date()) {
-  return new Date(base.getFullYear(), base.getMonth() + 1, 1);
-}
+import { useAuth } from "@/src/contexts/AuthContext";
+import {
+    listMembershipsByPerson,
+    Membership,
+} from "@/src/services/memberships";
 
 /* =========================
    COMPONENT
@@ -18,18 +15,9 @@ function getNextMonth(base = new Date()) {
 
 export default function LeaderDashboard() {
   const { user } = useAuth();
+  const router = useRouter();
 
-  if (!user || user.role !== "leader") return null;
-
-  const targetDate = useMemo(() => getNextMonth(), []);
-  const year = targetDate.getFullYear();
-  const month = targetDate.getMonth();
-  const monthKey = getMonthKey(targetDate);
-  const monthLabel = getMonthName(year, month);
-
-  const [availabilityStatus, setAvailabilityStatus] =
-    useState<"open" | "closed" | "unknown">("unknown");
-
+  const [memberships, setMemberships] = useState<Membership[]>([]);
   const [loading, setLoading] = useState(true);
 
   /* =========================
@@ -37,14 +25,23 @@ export default function LeaderDashboard() {
   ========================= */
 
   useEffect(() => {
+    if (!user) return;
+
     async function load() {
-      const period = await getAvailabilityPeriod(monthKey);
-      setAvailabilityStatus(period?.status ?? "closed");
+      setLoading(true);
+      const data = await listMembershipsByPerson(user.uid);
+
+      setMemberships(
+        data.filter(
+          (m) =>
+            m.role === "leader" && m.status === "active"
+        )
+      );
       setLoading(false);
     }
 
     load();
-  }, [monthKey]);
+  }, [user]);
 
   /* =========================
      RENDER
@@ -58,70 +55,75 @@ export default function LeaderDashboard() {
     );
   }
 
+  if (memberships.length === 0) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>
+          Nenhum ministério atribuído
+        </Text>
+        <Text style={styles.subtitle}>
+          Você ainda não é líder de nenhum ministério.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      {/* HEADER */}
-      <Text style={styles.title}>Escala do Ministério</Text>
+      <Text style={styles.title}>Painel do Líder</Text>
       <Text style={styles.subtitle}>
-        Planejamento de {monthLabel}
+        Selecione um ministério
       </Text>
 
-      {/* STATUS CARD */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Disponibilidade dos membros</Text>
-
-        {availabilityStatus === "open" ? (
-          <Text style={[styles.statusText, styles.statusOpen]}>
-            ✅ Período aberto
+      {memberships.map((m) => (
+        <View key={m.id} style={styles.card}>
+          <Text style={styles.cardTitle}>
+            {m.ministryName}
           </Text>
-        ) : (
-          <Text style={[styles.statusText, styles.statusClosed]}>
-            🔒 Período fechado
-          </Text>
-        )}
 
-        <Text style={styles.helperText}>
-          Os membros precisam informar a disponibilidade antes da
-          geração da escala.
-        </Text>
-      </View>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() =>
+              router.push({
+                pathname: "/(leader)/calendar",
+                params: { ministryId: m.ministryId },
+              })
+            }
+          >
+            <Text style={styles.buttonText}>
+              Calendário de cultos
+            </Text>
+          </TouchableOpacity>
 
-      {/* ACTIONS */}
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={[
-            styles.primaryButton,
-            availabilityStatus !== "open" && styles.disabled,
-          ]}
-          disabled={availabilityStatus !== "open"}
-          onPress={() => {
-            // próxima tela: gerar escala
-          }}
-        >
-          <Text style={styles.primaryText}>
-            Gerar escala do ministério
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.buttonSecondary}
+            onPress={() =>
+              router.push({
+                pathname: "/(leader)/people",
+                params: { ministryId: m.ministryId },
+              })
+            }
+          >
+            <Text style={styles.buttonSecondaryText}>
+              Pessoas do ministério
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => {
-            // próxima tela: visualizar escala existente
-          }}
-        >
-          <Text style={styles.secondaryText}>
-            Ver escala atual
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* INFO */}
-      <View style={styles.infoBox}>
-        <Text style={styles.infoText}>
-          ℹ️ Após finalizar a escala do seu ministério, o admin irá
-          consolidar a escala geral do mês.
-        </Text>
-      </View>
+          <TouchableOpacity
+            style={styles.buttonSecondary}
+            onPress={() =>
+              router.push({
+                pathname: "/(leader)/schedule",
+                params: { ministryId: m.ministryId },
+              })
+            }
+          >
+            <Text style={styles.buttonSecondaryText}>
+              Escala
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ))}
     </View>
   );
 }
@@ -135,95 +137,44 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     backgroundColor: "#FFFFFF",
+    gap: 16,
   },
-
   title: {
     fontSize: 22,
-    fontWeight: "900",
+    fontWeight: "800",
   },
-
   subtitle: {
-    marginTop: 4,
     color: "#6B7280",
-    marginBottom: 16,
   },
-
   card: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 14,
-    padding: 16,
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    marginBottom: 16,
+    borderRadius: 16,
+    padding: 16,
+    gap: 8,
   },
-
   cardTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "800",
-    marginBottom: 6,
-    color: "#111827",
   },
-
-  statusText: {
-    fontWeight: "900",
-    marginBottom: 6,
-  },
-
-  statusOpen: {
-    color: "#065F46",
-  },
-
-  statusClosed: {
-    color: "#991B1B",
-  },
-
-  helperText: {
-    color: "#374151",
-    fontSize: 13,
-  },
-
-  actions: {
-    gap: 10,
-  },
-
-  primaryButton: {
-    backgroundColor: "#065F46",
-    paddingVertical: 14,
+  button: {
+    backgroundColor: "#2563EB",
+    paddingVertical: 12,
     borderRadius: 12,
   },
-
-  primaryText: {
+  buttonText: {
     color: "#FFFFFF",
-    fontWeight: "900",
+    fontWeight: "800",
     textAlign: "center",
   },
-
-  secondaryButton: {
+  buttonSecondary: {
     backgroundColor: "#E5E7EB",
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 12,
   },
-
-  secondaryText: {
-    fontWeight: "900",
-    color: "#111827",
+  buttonSecondaryText: {
+    fontWeight: "800",
     textAlign: "center",
-  },
-
-  disabled: {
-    opacity: 0.5,
-  },
-
-  infoBox: {
-    marginTop: 20,
-    backgroundColor: "#EEF2FF",
-    padding: 12,
-    borderRadius: 12,
-  },
-
-  infoText: {
-    color: "#1E3A8A",
-    fontWeight: "700",
-    fontSize: 13,
+    color: "#111827",
   },
 });

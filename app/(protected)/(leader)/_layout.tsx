@@ -1,7 +1,5 @@
-import { Slot } from "expo-router";
+import { Tabs } from "expo-router";
 
 export default function LeaderLayout() {
-  return (
-    <Slot />
-  );
+  return <Tabs screenOptions={{ headerShown: false }} />;
 }

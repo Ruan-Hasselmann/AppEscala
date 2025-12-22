@@ -1,84 +1,153 @@
-import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+// src/app/(public)/login.tsx
+import { Link } from "expo-router";
+import { useState } from "react";
 import {
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { useAuth } from "../../src/contexts/AuthContext";
 
-export default function Login() {
-  const { login, user, loading } = useAuth();
-  const router = useRouter();
+import { useAuth } from "@/src/contexts/AuthContext";
+
+/* =========================
+   COMPONENT
+========================= */
+
+export default function LoginScreen() {
+  const { login, loading } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  /* =========================
+     ACTION
+  ========================= */
+
+  function isValidEmail(value: string) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+  }
 
   async function handleLogin() {
-    console.log("👉 Cliquei em Entrar");
-    console.log("Email:", email);
-    console.log("Senha:", password);
+    setError(null);
+
+    if (!email || !password) {
+      setError("Informe email e senha");
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      setError("Informe um email válido");
+      return;
+    }
 
     try {
-      setError("");
-      await login(email.trim(), password);
-      console.log("✅ login() retornou sem erro");
-    } catch (e) {
-      console.error("❌ Erro no handleLogin:", e);
+      setSubmitting(true);
+      await login(email.trim().toLowerCase(), password);
+      // ⚠️ navegação será tratada depois (guards)
+    } catch (err: any) {
+      console.log("LOGIN ERROR:", err.code, err.message);
       setError("Email ou senha inválidos");
+    } finally {
+      setSubmitting(false);
     }
   }
 
-
-  /* 🔑 REDIRECIONAMENTO CORRETO */
-  useEffect(() => {
-    if (!loading && user) {
-      router.replace("/"); // 👈 index decide a rota pelo role
-    }
-  }, [loading, user]);
+  /* =========================
+     RENDER
+  ========================= */
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Escala App</Text>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <View style={styles.card}>
+        <Text style={styles.title}>Entrar</Text>
 
-      <TextInput
-        placeholder="Email"
-        placeholderTextColor="#6B7280"
-        keyboardType="email-address"
-        autoCapitalize="none"
-        style={styles.input}
-        value={email}
-        onChangeText={setEmail}
-      />
+        <TextInput
+          style={[
+            styles.input,
+            error?.includes("email") && { borderColor: "#DC2626" },
+          ]}
+          placeholder="Email"
+          placeholderTextColor="#6B7280"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
 
-      <TextInput
-        placeholder="Senha"
-        placeholderTextColor="#6B7280"
-        secureTextEntry
-        style={styles.input}
-        value={password}
-        onChangeText={setPassword}
-      />
+        <TextInput
+          style={styles.input}
+          placeholder="Senha"
+          placeholderTextColor="#6B7280"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+        />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error && <Text style={styles.error}>{error}</Text>}
 
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Entrar</Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity
+          style={[
+            styles.button,
+            (submitting || loading) && { opacity: 0.6 },
+          ]}
+          onPress={handleLogin}
+          disabled={submitting || loading}
+        >
+          <Text style={styles.buttonText}>
+            {submitting ? "Entrando..." : "Entrar"}
+          </Text>
+        </TouchableOpacity>
+
+        <Link href="/forgot-password" asChild>
+          <TouchableOpacity style={styles.linkBtn}>
+            <Text style={styles.linkTextForgot}>
+              Esqueci minha senha
+            </Text>
+          </TouchableOpacity>
+        </Link>
+
+        <Link href="/register" asChild>
+          <TouchableOpacity style={styles.linkBtn}>
+            <Text style={styles.linkText}>
+              Criar conta
+            </Text>
+          </TouchableOpacity>
+        </Link>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
-/* estilos mantidos */
+/* =========================
+   STYLES
+========================= */
+
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", padding: 24 },
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 20,
+    backgroundColor: "#FFFFFF",
+  },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 20,
+    elevation: 2,
+  },
   title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    marginBottom: 32,
+    fontSize: 22,
+    fontWeight: "800",
+    marginBottom: 16,
     textAlign: "center",
   },
   input: {
@@ -87,22 +156,34 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
-    color: "#111827",
   },
   button: {
-    backgroundColor: "#2563eb",
-    padding: 14,
+    backgroundColor: "#2563EB",
+    paddingVertical: 14,
     borderRadius: 12,
-    marginTop: 8,
+    marginTop: 4,
   },
   buttonText: {
-    color: "#fff",
+    color: "#FFFFFF",
+    fontWeight: "900",
     textAlign: "center",
-    fontWeight: "800",
   },
   error: {
     color: "#DC2626",
-    textAlign: "center",
     marginBottom: 8,
+    textAlign: "center",
+    fontWeight: "600",
+  },
+  linkBtn: {
+    marginTop: 12,
+    alignItems: "center",
+  },
+  linkText: {
+    fontWeight: "700",
+    color: "#2563EB",
+  },
+  linkTextForgot: {
+    fontWeight: "700",
+    color: "#DC2626",
   },
 });
