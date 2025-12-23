@@ -1,109 +1,82 @@
-// src/services/serviceDays.ts
 import {
+  addDoc,
+  collection,
+  deleteDoc,
   doc,
-  getDoc,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
+  getDocs,
+  query,
+  Timestamp,
+  where,
 } from "firebase/firestore";
-
-import { db } from "@/src/services/firebase";
+import { db } from "./firebase";
 
 /* =========================
    TYPES
 ========================= */
 
-export type ServiceTurn = {
-  morning: boolean;
-  night: boolean;
+export type ServiceDay = {
+  id: string;
+  date: Date;
 };
-
-export type ServiceDaysMap = Record<string, ServiceTurn>;
 
 /* =========================
    HELPERS
 ========================= */
 
-function monthKeyFromDate(date: Date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
+// normaliza a data para 00:00
+function normalizeDate(date: Date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
 /* =========================
-   COLLECTION
+   SERVICE
 ========================= */
 
-const COLLECTION = "serviceDays";
+const serviceDaysRef = collection(db, "serviceDays");
 
-/* =========================
-   READ
-========================= */
+export async function createServiceDay(date: Date) {
+  const normalized = normalizeDate(date);
 
-export async function getServiceDays(
-  monthKey: string
-): Promise<ServiceDaysMap> {
-  const ref = doc(db, COLLECTION, monthKey);
-  const snap = await getDoc(ref);
-
-  if (!snap.exists()) return {};
-
-  return snap.data()?.days ?? {};
-}
-
-/* =========================
-   WRITE
-========================= */
-
-export async function toggleServiceDay(
-  monthKey: string,
-  dateKey: string,
-  turn: keyof ServiceTurn
-) {
-  const ref = doc(db, COLLECTION, monthKey);
-  const snap = await getDoc(ref);
-
-  if (!snap.exists()) {
-    const initial: ServiceDaysMap = {
-      [dateKey]: {
-        morning: turn === "morning",
-        night: turn === "night",
-      },
-    };
-
-    await setDoc(ref, {
-      monthKey,
-      days: initial,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-
-    return;
-  }
-
-  const data = snap.data();
-  const days: ServiceDaysMap = data.days ?? {};
-
-  const current = days[dateKey] ?? {
-    morning: false,
-    night: false,
-  };
-
-  days[dateKey] = {
-    ...current,
-    [turn]: !current[turn],
-  };
-
-  await updateDoc(ref, {
-    days,
-    updatedAt: serverTimestamp(),
+  await addDoc(serviceDaysRef, {
+    date: Timestamp.fromDate(normalized),
+    enabled: true,
+    createdAt: Timestamp.now(),
   });
 }
 
-/* =========================
-   UTILS
-========================= */
+export async function getServiceDaysByMonth(
+  month: Date
+): Promise<ServiceDay[]> {
+  const start = new Date(
+    month.getFullYear(),
+    month.getMonth(),
+    1
+  );
+  start.setHours(0, 0, 0, 0);
 
-export function buildMonthKey(date = new Date()) {
-  return monthKeyFromDate(date);
+  const end = new Date(
+    month.getFullYear(),
+    month.getMonth() + 1,
+    0
+  );
+  end.setHours(23, 59, 59, 999);
+
+  const q = query(
+    serviceDaysRef,
+    where("date", ">=", Timestamp.fromDate(start)),
+    where("date", "<=", Timestamp.fromDate(end))
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((doc) => ({
+    id: doc.id,
+    date: doc.data().date.toDate(),
+  }));
+}
+
+export async function deleteServiceDay(id: string) {
+  await deleteDoc(doc(db, "serviceDays", id));
 }

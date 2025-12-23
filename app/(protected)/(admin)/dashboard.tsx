@@ -1,19 +1,54 @@
-// app/(protected)/(admin)/dashboard.tsx
-import { useRouter } from "expo-router";
-import {
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-
-import { AppScreen } from "@/src/components/AppScreen";
-import { SYSTEM_ROLE_LABEL, useAuth } from "@/src/contexts/AuthContext";
 import { AppHeader } from "@/src/components/AppHeader";
+import { AppScreen } from "@/src/components/AppScreen";
+import { CalendarDashboard, CalendarDayData } from "@/src/components/CalendarDashboard";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { getMockCalendarData } from "@/src/mocks/calendarMock";
+import { getServiceDaysByMonth, ServiceDay } from "@/src/services/serviceDays";
+import { getServicesByServiceDay } from "@/src/services/services";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+
+async function mapToCalendarData(
+  serviceDays: ServiceDay[]
+): Promise<CalendarDayData[]> {
+  const result: CalendarDayData[] = [];
+
+  for (const day of serviceDays) {
+    const services = await getServicesByServiceDay(day.id);
+
+    result.push({
+      date: day.date,
+      services: services.map((s) => ({
+        label: s.label,
+        status: "pending", // depois vira published/draft
+      })),
+    });
+  }
+
+  return result;
+}
 
 export default function AdminDashboard() {
-  const router = useRouter();
   const { user, logout } = useAuth();
+  const [month, setMonth] = useState(new Date());
+  const [calendarData, setCalendarData] = useState<
+    CalendarDayData[]
+  >([]);
+
+  async function loadDashboard() {
+    const days = await getServiceDaysByMonth(month);
+    const calendar = await mapToCalendarData(days);
+    setCalendarData(calendar);
+  }
+
+  const data = getMockCalendarData(month);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboard();
+    }, [month])
+  );
 
   return (
     <AppScreen>
@@ -22,57 +57,53 @@ export default function AdminDashboard() {
         subtitle={`${user?.name} · Administrador`}
         onLogout={logout}
       />
-      <View style={styles.container}>
 
-        {/* CONTENT */}
-        <View style={styles.content}>
-          <DashboardCard
-            title="Pessoas"
-            description="Gerenciar usuários e permissões"
+      <View style={{ padding: 16 }}>
+        {/* HEADER DE MÊS */}
+        <View style={styles.monthHeader}>
+          <Pressable
             onPress={() =>
-              router.push("/(protected)/(admin)/people")
+              setMonth(
+                new Date(
+                  month.getFullYear(),
+                  month.getMonth() - 1,
+                  1
+                )
+              )
             }
-          />
+          >
+            <Text style={styles.nav}>◀</Text>
+          </Pressable>
 
-          <DashboardCard
-            title="Ministérios"
-            description="Criar e organizar ministérios"
-            onPress={() =>
-              router.push("/(protected)/(admin)/ministries")
-            }
-          />
+          <Text style={styles.monthTitle}>
+            {month.toLocaleDateString("pt-BR", {
+              month: "long",
+              year: "numeric",
+            })}
+          </Text>
 
-          <DashboardCard
-            title="Dias de Culto"
-            description="Configurar calendário de cultos"
+          <Pressable
             onPress={() =>
-              router.push("/(protected)/(admin)/service-days")
+              setMonth(
+                new Date(
+                  month.getFullYear(),
+                  month.getMonth() + 1,
+                  1
+                )
+              )
             }
-          />
+          >
+            <Text style={styles.nav}>▶</Text>
+          </Pressable>
         </View>
+
+        {/* CALENDÁRIO */}
+        <CalendarDashboard
+          month={month}
+          data={calendarData}
+        />
       </View>
     </AppScreen>
-  );
-}
-
-/* =========================
-   COMPONENTS
-========================= */
-
-function DashboardCard({
-  title,
-  description,
-  onPress,
-}: {
-  title: string;
-  description: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.card} onPress={onPress}>
-      <Text style={styles.cardTitle}>{title}</Text>
-      <Text style={styles.cardDescription}>{description}</Text>
-    </TouchableOpacity>
   );
 }
 
@@ -82,60 +113,119 @@ function DashboardCard({
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
     padding: 16,
   },
 
-  /* HEADER */
-  header: {
+  monthHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 24,
+    justifyContent: "space-between",
+    marginBottom: 12,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#111827",
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginTop: 2,
-  },
-  logoutBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    backgroundColor: "#FEE2E2",
-  },
-  logoutText: {
-    color: "#991B1B",
-    fontWeight: "700",
-  },
-
-  /* CONTENT */
-  content: {
-    gap: 12,
-  },
-
-  /* CARD */
-  card: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  cardTitle: {
+  monthTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#111827",
+    textTransform: "capitalize",
+  },
+  nav: {
+    fontSize: 30,
+    fontWeight: "800",
+  },
+
+  weekRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+  },
+  weekDay: {
+    flex: 1,
+    textAlign: "center",
+    fontWeight: "700",
+    color: "#6B7280",
+  },
+
+  calendar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+
+  empty: {
+    width: "14.2857%",
+    aspectRatio: 1,
+  },
+
+  dayCell: {
+    width: "14.2857%",
+    aspectRatio: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    marginBottom: 8,
+  },
+
+  today: {
+    borderColor: "#2563EB",
+    borderWidth: 2,
+  },
+
+  dayNumber: {
+    fontWeight: "700",
     marginBottom: 4,
   },
-  cardDescription: {
+
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  dotPublished: {
+    backgroundColor: "#22C55E",
+  },
+  dotDraft: {
+    backgroundColor: "#F59E0B",
+  },
+  dotPending: {
+    backgroundColor: "#EF4444",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  modal: {
+    backgroundColor: "#FFFFFF",
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 12,
+    textTransform: "capitalize",
+  },
+  service: {
+    marginBottom: 12,
+  },
+  serviceTitle: {
+    fontWeight: "700",
+  },
+  person: {
     fontSize: 14,
-    color: "#4B5563",
+    color: "#374151",
+  },
+  close: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#111827",
+    alignItems: "center",
+  },
+  closeText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
 });

@@ -1,33 +1,28 @@
 import { ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
-import {
-  useSafeAreaInsets
-} from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-type AppScreenProps = {
+type Props = {
   children: ReactNode;
 };
 
-export function AppScreen({ children }: AppScreenProps) {
-  const insets = useSafeAreaInsets();
-
+export function AppScreen({ children }: Props) {
   return (
-      <View
-        style={[
-          styles.container,
-          {
-            paddingBottom: insets.bottom, // ✅ tabs / nav android
-          },
-        ]}
-      >
-        {children}
-      </View>
+    <SafeAreaView
+      style={styles.safe}
+      edges={["bottom"]} // 👈 CRÍTICO
+    >
+      <View style={styles.container}>{children}</View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
     backgroundColor: "#FFFFFF",
+  },
+  container: {
+    flex: 1,
   },
 });

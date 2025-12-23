@@ -1,130 +1,30 @@
-// src/app/(leader)/dashboard.tsx
-import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-
+import { AppHeader } from "@/src/components/AppHeader";
+import { AppScreen } from "@/src/components/AppScreen";
+import { CalendarDashboard } from "@/src/components/CalendarDashboard";
 import { useAuth } from "@/src/contexts/AuthContext";
-import {
-    listMembershipsByPerson,
-    Membership,
-} from "@/src/services/memberships";
-
-/* =========================
-   COMPONENT
-========================= */
+import { getMockCalendarData } from "@/src/mocks/calendarMock";
+import { useState } from "react";
+import { StyleSheet, View } from "react-native";
 
 export default function LeaderDashboard() {
-  const { user } = useAuth();
-  const router = useRouter();
-
-  const [memberships, setMemberships] = useState<Membership[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  /* =========================
-     LOAD
-  ========================= */
-
-  useEffect(() => {
-    if (!user) return;
-
-    async function load() {
-      setLoading(true);
-      const data = await listMembershipsByPerson(user.uid);
-
-      setMemberships(
-        data.filter(
-          (m) =>
-            m.role === "leader" && m.status === "active"
-        )
-      );
-      setLoading(false);
-    }
-
-    load();
-  }, [user]);
-
-  /* =========================
-     RENDER
-  ========================= */
-
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <Text>Carregando…</Text>
-      </View>
-    );
-  }
-
-  if (memberships.length === 0) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>
-          Nenhum ministério atribuído
-        </Text>
-        <Text style={styles.subtitle}>
-          Você ainda não é líder de nenhum ministério.
-        </Text>
-      </View>
-    );
-  }
+  const { user, logout } = useAuth();
+  const [month] = useState(new Date());
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Painel do Líder</Text>
-      <Text style={styles.subtitle}>
-        Selecione um ministério
-      </Text>
+    <AppScreen>
+      <AppHeader
+        title="Painel do Líder"
+        subtitle={user?.name}
+        onLogout={logout}
+      />
 
-      {memberships.map((m) => (
-        <View key={m.id} style={styles.card}>
-          <Text style={styles.cardTitle}>
-            {m.ministryName}
-          </Text>
-
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() =>
-              router.push({
-                pathname: "/(leader)/calendar",
-                params: { ministryId: m.ministryId },
-              })
-            }
-          >
-            <Text style={styles.buttonText}>
-              Calendário de cultos
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.buttonSecondary}
-            onPress={() =>
-              router.push({
-                pathname: "/(leader)/people",
-                params: { ministryId: m.ministryId },
-              })
-            }
-          >
-            <Text style={styles.buttonSecondaryText}>
-              Pessoas do ministério
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.buttonSecondary}
-            onPress={() =>
-              router.push({
-                pathname: "/(leader)/schedule",
-                params: { ministryId: m.ministryId },
-              })
-            }
-          >
-            <Text style={styles.buttonSecondaryText}>
-              Escala
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ))}
-    </View>
+      <View style={{ padding: 16 }}>
+        <CalendarDashboard
+          month={month}
+          data={getMockCalendarData(month)}
+        />
+      </View>
+    </AppScreen>
   );
 }
 
@@ -134,47 +34,119 @@ export default function LeaderDashboard() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     padding: 16,
-    backgroundColor: "#FFFFFF",
-    gap: 16,
   },
-  title: {
-    fontSize: 22,
+
+  monthHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  monthTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    textTransform: "capitalize",
+  },
+  nav: {
+    fontSize: 18,
     fontWeight: "800",
   },
-  subtitle: {
+
+  weekRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+  },
+  weekDay: {
+    flex: 1,
+    textAlign: "center",
+    fontWeight: "700",
     color: "#6B7280",
   },
-  card: {
+
+  calendar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+
+  empty: {
+    width: "14.2857%",
+    aspectRatio: 1,
+  },
+
+  dayCell: {
+    width: "14.2857%",
+    aspectRatio: 1,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    borderRadius: 16,
-    padding: 16,
-    gap: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    marginBottom: 8,
   },
-  cardTitle: {
-    fontSize: 16,
+
+  today: {
+    borderColor: "#2563EB",
+    borderWidth: 2,
+  },
+
+  dayNumber: {
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  dotPublished: {
+    backgroundColor: "#22C55E",
+  },
+  dotDraft: {
+    backgroundColor: "#F59E0B",
+  },
+  dotPending: {
+    backgroundColor: "#EF4444",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  modal: {
+    backgroundColor: "#FFFFFF",
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
     fontWeight: "800",
+    marginBottom: 12,
+    textTransform: "capitalize",
   },
-  button: {
-    backgroundColor: "#2563EB",
-    paddingVertical: 12,
-    borderRadius: 12,
+  service: {
+    marginBottom: 12,
   },
-  buttonText: {
+  serviceTitle: {
+    fontWeight: "700",
+  },
+  person: {
+    fontSize: 14,
+    color: "#374151",
+  },
+  close: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#111827",
+    alignItems: "center",
+  },
+  closeText: {
     color: "#FFFFFF",
-    fontWeight: "800",
-    textAlign: "center",
-  },
-  buttonSecondary: {
-    backgroundColor: "#E5E7EB",
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  buttonSecondaryText: {
-    fontWeight: "800",
-    textAlign: "center",
-    color: "#111827",
+    fontWeight: "700",
   },
 });
