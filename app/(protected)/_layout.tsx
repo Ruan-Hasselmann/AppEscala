@@ -1,56 +1,78 @@
-import AppScreen from "@/src/components/AppScreen";
-import { useAuth } from "@/src/contexts/AuthContext";
-import { router, Slot, useSegments } from "expo-router";
-import { useEffect } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+// app/(protected)/_layout.tsx
+import { Redirect, Stack, usePathname } from "expo-router";
+import { ActivityIndicator, View } from "react-native";
 
-const ROLE_GROUP_MAP = {
-  admin: "(admin)",
-  leader: "(leader)",
-  member: "(member)",
+import { useAuth } from "@/src/contexts/AuthContext";
+
+const ROLE_ROOT = {
+  admin: "/(protected)/(admin)/dashboard",
+  leader: "/(protected)/(leader)/dashboard",
+  member: "/(protected)/(member)/dashboard",
 } as const;
 
 export default function ProtectedLayout() {
   const { user, loading } = useAuth();
-  const segments = useSegments();
+  const pathname = usePathname();
 
-  useEffect(() => {
-    if (loading) return;
-
-    if (!user) {
-      router.replace("/(public)/login");
-      return;
-    }
-
-    const expectedGroup = ROLE_GROUP_MAP[user.role];
-    const currentGroup = segments[1];
-
-    if (currentGroup !== expectedGroup) {
-      router.replace(`/(protected)/${expectedGroup}/dashboard` as any);
-    }
-  }, [loading, user, segments]);
+  /* =========================
+     LOADING
+  ========================= */
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
         <ActivityIndicator size="large" />
       </View>
     );
   }
 
-  if (!user) return null;
+  /* =========================
+     NÃO AUTENTICADO → BLOQUEIO TOTAL
+  ========================= */
 
-  return (
-    <AppScreen>
-      <Slot />
-    </AppScreen>
-  );
+  if (!user) {
+    return <Redirect href="/login" />;
+  }
+
+  const roleRoot = ROLE_ROOT[user.role];
+
+  if (!roleRoot) {
+    return <Redirect href="/login" />;
+  }
+
+  /* =========================
+     REDIRECT ROOT /protected
+  ========================= */
+
+  if (pathname === "/(protected)") {
+    return <Redirect href={roleRoot} />;
+  }
+
+  /* =========================
+     BLOQUEIO POR ROLE
+  ========================= */
+
+  if (user.role === "member") {
+    if (pathname.includes("(admin)") || pathname.includes("(leader)")) {
+      return <Redirect href={roleRoot} />;
+    }
+  }
+
+  if (user.role === "leader") {
+    if (pathname.includes("(admin)")) {
+      return <Redirect href={roleRoot} />;
+    }
+  }
+
+  /* =========================
+     AUTORIZADO → RENDERIZA STACK
+  ========================= */
+
+  return <Stack screenOptions={{ headerShown: false }} />;
 }
-
-const styles = StyleSheet.create({
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-});

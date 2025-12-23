@@ -1,14 +1,5 @@
-import { Redirect, Slot } from "expo-router";
-import { useAuth } from "../../../src/contexts/AuthContext";
+import { Tabs } from "expo-router";
 
 export default function LeaderLayout() {
-  const { user, loading } = useAuth();
-
-  if (loading) return null;
-
-  if (!user || user.role !== "leader") {
-    return <Redirect href="/" />;
-  }
-
-  return <Slot />;
+  return <Tabs screenOptions={{ headerShown: false }} />;
 }

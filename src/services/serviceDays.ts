@@ -1,52 +1,82 @@
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  query,
+  Timestamp,
+  where,
+} from "firebase/firestore";
 import { db } from "./firebase";
 
-export type ServiceTurn = {
-  morning: boolean;
-  night: boolean;
+/* =========================
+   TYPES
+========================= */
+
+export type ServiceDay = {
+  id: string;
+  date: Date;
 };
 
-export async function toggleServiceDay(
-  monthKey: string,
-  dateKey: string,
-  turn: "morning" | "night"
-) {
-  const ref = db
-    .collection("services_days")
-    .doc(monthKey)
-    .collection("dates")
-    .doc(dateKey);
+/* =========================
+   HELPERS
+========================= */
 
-  const snap = await ref.get();
-
-  const data: ServiceTurn = snap.exists
-    ? (snap.data() as ServiceTurn)
-    : { morning: false, night: false };
-
-  const updated = {
-    ...data,
-    [turn]: !data[turn],
-  };
-
-  // Se nenhum turno estiver ativo, remove o dia
-  if (!updated.morning && !updated.night) {
-    await ref.delete();
-  } else {
-    await ref.set(updated);
-  }
+// normaliza a data para 00:00
+function normalizeDate(date: Date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-export async function getServiceDays(monthKey: string) {
-  const snapshot = await db
-    .collection("services_days")
-    .doc(monthKey)
-    .collection("dates")
-    .get();
+/* =========================
+   SERVICE
+========================= */
 
-  const days: Record<string, ServiceTurn> = {};
+const serviceDaysRef = collection(db, "serviceDays");
 
-  snapshot.forEach((doc) => {
-    days[doc.id] = doc.data() as ServiceTurn;
+export async function createServiceDay(date: Date) {
+  const normalized = normalizeDate(date);
+
+  await addDoc(serviceDaysRef, {
+    date: Timestamp.fromDate(normalized),
+    enabled: true,
+    createdAt: Timestamp.now(),
   });
+}
 
-  return days;
+export async function getServiceDaysByMonth(
+  month: Date
+): Promise<ServiceDay[]> {
+  const start = new Date(
+    month.getFullYear(),
+    month.getMonth(),
+    1
+  );
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(
+    month.getFullYear(),
+    month.getMonth() + 1,
+    0
+  );
+  end.setHours(23, 59, 59, 999);
+
+  const q = query(
+    serviceDaysRef,
+    where("date", ">=", Timestamp.fromDate(start)),
+    where("date", "<=", Timestamp.fromDate(end))
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((doc) => ({
+    id: doc.id,
+    date: doc.data().date.toDate(),
+  }));
+}
+
+export async function deleteServiceDay(id: string) {
+  await deleteDoc(doc(db, "serviceDays", id));
 }

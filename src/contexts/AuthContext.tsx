@@ -1,134 +1,138 @@
+// src/contexts/AuthContext.tsx
 import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut,
-} from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { createContext, useContext, useEffect, useState } from "react";
-import { auth, db } from "../services/firebase";
+  createContext,
+  ReactNode,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+
+import { auth } from "@/src/services/firebase";
+import { createPerson, getPersonById } from "@/src/services/people";
+import { SYSTEM_ROLE_LABEL, SystemRole } from "../constants/role";
 
 /* =========================
    TYPES
 ========================= */
 
+export { SYSTEM_ROLE_LABEL, SystemRole };
+
 export type AppUser = {
   uid: string;
   email: string;
   name: string;
-  role: "admin" | "leader" | "member";
-  ministryIds: string[];
+  role: SystemRole;
+};
+
+type RegisterInput = {
+  name: string;
+  email: string;
+  password: string;
 };
 
 type AuthContextType = {
   user: AppUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  register: (input: RegisterInput) => Promise<void>;
   logout: () => Promise<void>;
 };
 
-/* =========================
-   CONTEXT
-========================= */
-
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
-/* =========================
-   PROVIDER
-========================= */
-
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /* =========================
-     LOGIN
-  ========================= */
-
-  async function login(email: string, password: string) {
-    await signInWithEmailAndPassword(auth, email, password);
-    // listener resolve
-  }
-
-  /* =========================
-     LOGOUT
-  ========================= */
-
-  async function logout() {
-    await signOut(auth);
-    setUser(null);
-  }
-
-  /* =========================
-     HELPER: aguarda perfil
-  ========================= */
-
-  async function waitForUserProfile(
-    uid: string,
-    retries = 6,
-    delay = 500
-  ): Promise<AppUser | null> {
-    for (let i = 0; i < retries; i++) {
-      const snap = await getDoc(doc(db, "users", uid));
-
-      if (snap.exists()) {
-        return {
-          uid,
-          ...(snap.data() as Omit<AppUser, "uid">),
-        };
-      }
-
-      // aguarda um pouco antes de tentar de novo
-      await new Promise((res) => setTimeout(res, delay));
-    }
-
-    return null;
-  }
-
-  /* =========================
-     AUTH LISTENER (única fonte)
-  ========================= */
-
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      // 🔒 Não autenticado
+    const unsub = auth.onAuthStateChanged(async (firebaseUser) => {
+      console.log("AUTH STATE CHANGED:", firebaseUser?.uid);
+
       if (!firebaseUser) {
         setUser(null);
         setLoading(false);
         return;
       }
 
-      // ✅ A PARTIR DAQUI firebaseUser É GARANTIDO
-      const userRef = doc(db, "users", firebaseUser.uid);
-      const snap = await getDoc(userRef);
+      try {
+        const person = await waitForPerson(firebaseUser.uid);
 
-      if (!snap.exists()) {
-        console.warn("⚠️ Perfil ainda não disponível, aguardando...");
+        if (!person) {
+          console.warn("⚠️ Pessoa ainda não existe no Firestore");
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        setUser({
+          uid: person.uid,
+          email: person.email,
+          name: person.name,
+          role: person.role,
+        });
+      } catch (err) {
+        console.error("Erro ao carregar perfil:", err);
+        setUser(null);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      setUser({
-        uid: firebaseUser.uid,
-        email: firebaseUser.email ?? "",
-        ...(snap.data() as Omit<AppUser, "uid" | "email">),
-      });
-
-      setLoading(false);
     });
 
-    return unsub;
+    return () => unsub();
   }, []);
 
+  async function login(email: string, password: string) {
+    await auth.signInWithEmailAndPassword(
+      email.trim().toLowerCase(),
+      password
+    );
+  }
+
+  async function register({ name, email, password }: RegisterInput) {
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+
+    const cred = await auth.createUserWithEmailAndPassword(cleanEmail, password);
+    if (!cred.user) return;
+
+    await cred.user.updateProfile({ displayName: cleanName });
+
+    // ✅ cria Person imediatamente (evita usuário fantasma)
+    await createPerson({
+      uid: cred.user.uid,
+      name: cleanName,
+      email: cleanEmail,
+      role: "member",
+    });
+  }
+
+  async function waitForPerson(
+    uid: string,
+    retries = 6,
+    delay = 400
+  ) {
+    for (let i = 0; i < retries; i++) {
+      const person = await getPersonById(uid);
+
+      if (person) return person;
+
+      await new Promise((res) => setTimeout(res, delay));
+    }
+
+    return null;
+  }
+
+  async function logout() {
+    await auth.signOut();
+    setUser(null);
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
 }
-
-/* =========================
-   HOOK
-========================= */
 
 export function useAuth() {
   return useContext(AuthContext);

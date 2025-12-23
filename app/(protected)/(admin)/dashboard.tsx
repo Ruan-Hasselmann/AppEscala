@@ -1,324 +1,109 @@
-import { useEffect, useState } from "react";
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { AppHeader } from "@/src/components/AppHeader";
+import { AppScreen } from "@/src/components/AppScreen";
+import { CalendarDashboard, CalendarDayData } from "@/src/components/CalendarDashboard";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { getMockCalendarData } from "@/src/mocks/calendarMock";
+import { getServiceDaysByMonth, ServiceDay } from "@/src/services/serviceDays";
+import { getServicesByServiceDay } from "@/src/services/services";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import CalendarLegend from "../../../src/components/CalendarLegend";
-import { useAuth } from "../../../src/contexts/AuthContext";
-import {
-  getServiceDays,
-  toggleServiceDay,
-} from "../../../src/services/serviceDays";
-import {
-  getCalendarDays,
-  getMonthKey,
-  getMonthName,
-  weekDays,
-} from "../../../src/utils/calendar";
+async function mapToCalendarData(
+  serviceDays: ServiceDay[]
+): Promise<CalendarDayData[]> {
+  const result: CalendarDayData[] = [];
 
-/* =========================
-   TYPES
-========================= */
+  for (const day of serviceDays) {
+    const services = await getServicesByServiceDay(day.id);
 
-type ServiceTurn = {
-  morning: boolean;
-  night: boolean;
-};
+    result.push({
+      date: day.date,
+      services: services.map((s) => ({
+        label: s.label,
+        status: "pending", // depois vira published/draft
+      })),
+    });
+  }
 
-/* =========================
-   UTILS
-========================= */
-
-function getDateKey(date: Date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return result;
 }
 
-/* =========================
-   COMPONENT
-========================= */
-
 export default function AdminDashboard() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const [month, setMonth] = useState(new Date());
+  const [calendarData, setCalendarData] = useState<
+    CalendarDayData[]
+  >([]);
 
-  const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth());
-
-  const monthKey = getMonthKey(new Date(year, month));
-  const days = getCalendarDays(year, month);
-
-  const [serviceDays, setServiceDays] = useState<
-    Record<string, ServiceTurn>
-  >({});
-
-  const [modalVisible, setModalVisible] = useState(false);
-  const [selectedDateKey, setSelectedDateKey] =
-    useState<string | null>(null);
-  const [selectedTurns, setSelectedTurns] =
-    useState<ServiceTurn>({
-      morning: false,
-      night: false,
-    });
-
-  const [saving, setSaving] = useState(false);
-
-  /* =========================
-     LOAD
-  ========================= */
-
-  useEffect(() => {
-    async function load() {
-      const data = await getServiceDays(monthKey);
-      setServiceDays(data);
-    }
-    load();
-  }, [monthKey]);
-
-  /* =========================
-     MONTH NAV
-  ========================= */
-
-  function prevMonth() {
-    setMonth((prev) => (prev === 0 ? 11 : prev - 1));
-    if (month === 0) setYear((y) => y - 1);
+  async function loadDashboard() {
+    const days = await getServiceDaysByMonth(month);
+    const calendar = await mapToCalendarData(days);
+    setCalendarData(calendar);
   }
 
-  function nextMonth() {
-    setMonth((prev) => (prev === 11 ? 0 : prev + 1));
-    if (month === 11) setYear((y) => y + 1);
-  }
+  const data = getMockCalendarData(month);
 
-  /* =========================
-     MODAL
-  ========================= */
-
-  function openSundayModal(date: Date) {
-    const key = getDateKey(date);
-    const current = serviceDays[key] ?? {
-      morning: false,
-      night: false,
-    };
-
-    setSelectedDateKey(key);
-    setSelectedTurns(current);
-    setModalVisible(true);
-  }
-
-  async function saveTurns() {
-    if (!selectedDateKey) return;
-
-    setSaving(true);
-
-    const current = serviceDays[selectedDateKey] ?? {
-      morning: false,
-      night: false,
-    };
-
-    if (selectedTurns.morning !== current.morning) {
-      await toggleServiceDay(
-        monthKey,
-        selectedDateKey,
-        "morning"
-      );
-    }
-
-    if (selectedTurns.night !== current.night) {
-      await toggleServiceDay(
-        monthKey,
-        selectedDateKey,
-        "night"
-      );
-    }
-
-    const updated = await getServiceDays(monthKey);
-    setServiceDays(updated);
-
-    setSaving(false);
-    closeModal();
-  }
-
-  function closeModal() {
-    setModalVisible(false);
-    setSelectedDateKey(null);
-    setSelectedTurns({ morning: false, night: false });
-  }
-
-  /* =========================
-     RENDER
-  ========================= */
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboard();
+    }, [month])
+  );
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Dias de Culto</Text>
-        <Text style={styles.subtitle}>
-          Configure os dias em que haverá culto no mês
-        </Text>
-      </View>
-
-      {/* MONTH NAV */}
-      <View style={styles.monthNav}>
-        <TouchableOpacity onPress={prevMonth} style={styles.navBtn}>
-          <Text style={styles.navText}>‹</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.monthTitle}>
-          {getMonthName(year, month)}
-        </Text>
-
-        <TouchableOpacity onPress={nextMonth} style={styles.navBtn}>
-          <Text style={styles.navText}>›</Text>
-        </TouchableOpacity>
-      </View>
-
-      <CalendarLegend
-        items={[
-          { color: "#2563EB", label: "Dia com culto" },
-          { color: "#E5E7EB", label: "Sem culto" },
-        ]}
+    <AppScreen>
+      <AppHeader
+        title="Painel Administrativo"
+        subtitle={`${user?.name} · Administrador`}
+        onLogout={logout}
       />
 
-      {/* WEEK HEADER */}
-      <View style={styles.weekRow}>
-        {weekDays.map((day) => (
-          <Text key={day} style={styles.weekDay}>
-            {day}
+      <View style={{ padding: 16 }}>
+        {/* HEADER DE MÊS */}
+        <View style={styles.monthHeader}>
+          <Pressable
+            onPress={() =>
+              setMonth(
+                new Date(
+                  month.getFullYear(),
+                  month.getMonth() - 1,
+                  1
+                )
+              )
+            }
+          >
+            <Text style={styles.nav}>◀</Text>
+          </Pressable>
+
+          <Text style={styles.monthTitle}>
+            {month.toLocaleDateString("pt-BR", {
+              month: "long",
+              year: "numeric",
+            })}
           </Text>
-        ))}
-      </View>
 
-      {/* CALENDAR */}
-      <View style={styles.calendar}>
-        {days.map((date, index) => {
-          if (!date) {
-            return <View key={index} style={styles.empty} />;
-          }
-
-          const key = getDateKey(date);
-          const turns = serviceDays[key];
-          const hasService =
-            turns?.morning || turns?.night;
-          const isSunday = date.getDay() === 0;
-
-          return (
-            <TouchableOpacity
-              key={index}
-              style={[
-                styles.day,
-                hasService && styles.serviceDay,
-              ]}
-              onPress={async () => {
-                if (isSunday) {
-                  openSundayModal(date);
-                } else {
-                  await toggleServiceDay(
-                    monthKey,
-                    key,
-                    "morning"
-                  );
-                  const updated =
-                    await getServiceDays(monthKey);
-                  setServiceDays(updated);
-                }
-              }}
-            >
-              <Text
-                style={[
-                  styles.dayNumber,
-                  hasService && { color: "#111827" },
-                ]}
-              >
-                {date.getDate()}
-              </Text>
-
-              {isSunday && hasService && (
-                <View style={styles.turnsColumn}>
-                  {turns.morning && (
-                    <Text style={styles.icon}>☀️</Text>
-                  )}
-                  {turns.night && (
-                    <Text style={styles.icon}>🌙</Text>
-                  )}
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* MODAL */}
-      <Modal visible={modalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modal}>
-            <Text style={styles.modalTitle}>
-              Definir turnos (domingo)
-            </Text>
-
-            <Pressable
-              style={[
-                styles.modalBtn,
-                selectedTurns.morning &&
-                styles.modalBtnActive,
-              ]}
-              onPress={() =>
-                setSelectedTurns((p) => ({
-                  ...p,
-                  morning: !p.morning,
-                }))
-              }
-            >
-              <Text>☀️ Manhã</Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.modalBtn,
-                selectedTurns.night &&
-                styles.modalBtnActive,
-              ]}
-              onPress={() =>
-                setSelectedTurns((p) => ({
-                  ...p,
-                  night: !p.night,
-                }))
-              }
-            >
-              <Text>🌙 Noite</Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.saveBtn,
-                saving && { opacity: 0.6 },
-              ]}
-              onPress={saveTurns}
-              disabled={saving}
-            >
-              <Text style={styles.saveText}>
-                {saving ? "Salvando..." : "Salvar"}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={styles.cancelBtn}
-              onPress={closeModal}
-            >
-              <Text>Cancelar</Text>
-            </Pressable>
-          </View>
+          <Pressable
+            onPress={() =>
+              setMonth(
+                new Date(
+                  month.getFullYear(),
+                  month.getMonth() + 1,
+                  1
+                )
+              )
+            }
+          >
+            <Text style={styles.nav}>▶</Text>
+          </Pressable>
         </View>
-      </Modal>
-    </ScrollView>
+
+        {/* CALENDÁRIO */}
+        <CalendarDashboard
+          month={month}
+          data={calendarData}
+        />
+      </View>
+    </AppScreen>
   );
 }
 
@@ -327,84 +112,120 @@ export default function AdminDashboard() {
 ========================= */
 
 const styles = StyleSheet.create({
-  container: { padding: 16 },
+  container: {
+    padding: 16,
+  },
 
-  header: { marginBottom: 12 },
-  title: { fontSize: 22, fontWeight: "800" },
-  subtitle: { color: "#6B7280", marginTop: 4 },
-
-  monthNav: {
+  monthHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  navBtn: { padding: 10 },
-  navText: { fontSize: 26, color: "#1E3A8A" },
-  monthTitle: { fontSize: 18, fontWeight: "800" },
+  monthTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    textTransform: "capitalize",
+  },
+  nav: {
+    fontSize: 30,
+    fontWeight: "800",
+  },
 
-  weekRow: { flexDirection: "row", marginBottom: 6 },
+  weekRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+  },
   weekDay: {
-    width: "14.28%",
+    flex: 1,
     textAlign: "center",
     fontWeight: "700",
+    color: "#6B7280",
   },
 
-  calendar: { flexDirection: "row", flexWrap: "wrap" },
-  empty: { width: "14.28%", height: 86 },
+  calendar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
 
-  day: {
-    width: "14.28%",
-    minHeight: 86,
+  empty: {
+    width: "14.2857%",
+    aspectRatio: 1,
+  },
+
+  dayCell: {
+    width: "14.2857%",
+    aspectRatio: 1,
     borderRadius: 10,
-    backgroundColor: "#E5E7EB",
-    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    justifyContent: "center",
     alignItems: "center",
-    padding: 4,
+    backgroundColor: "#FFFFFF",
+    marginBottom: 8,
   },
-  serviceDay: { backgroundColor: "#2563EB" },
 
-  dayNumber: { fontWeight: "700", marginBottom: 4 },
-  turnsColumn: { alignItems: "center", gap: 4 },
-  icon: { fontSize: 16 },
+  today: {
+    borderColor: "#2563EB",
+    borderWidth: 2,
+  },
+
+  dayNumber: {
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  dotPublished: {
+    backgroundColor: "#22C55E",
+  },
+  dotDraft: {
+    backgroundColor: "#F59E0B",
+  },
+  dotPending: {
+    backgroundColor: "#EF4444",
+  },
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
   },
   modal: {
-    width: "80%",
     backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    padding: 16,
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: "800",
     marginBottom: 12,
-    textAlign: "center",
+    textTransform: "capitalize",
   },
-  modalBtn: {
+  service: {
+    marginBottom: 12,
+  },
+  serviceTitle: {
+    fontWeight: "700",
+  },
+  person: {
+    fontSize: 14,
+    color: "#374151",
+  },
+  close: {
+    marginTop: 16,
     padding: 12,
     borderRadius: 10,
-    backgroundColor: "#E5E7EB",
-    marginBottom: 8,
+    backgroundColor: "#111827",
     alignItems: "center",
   },
-  modalBtnActive: { backgroundColor: "#1E3A8A" },
-
-  saveBtn: {
-    marginTop: 12,
-    backgroundColor: "#065F46",
-    padding: 12,
-    borderRadius: 10,
-  },
-  saveText: {
+  closeText: {
     color: "#FFFFFF",
-    textAlign: "center",
-    fontWeight: "800",
+    fontWeight: "700",
   },
-  cancelBtn: { marginTop: 8, alignItems: "center" },
 });

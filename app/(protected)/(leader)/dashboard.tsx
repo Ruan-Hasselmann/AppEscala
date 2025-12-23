@@ -1,128 +1,30 @@
-import { useEffect, useMemo, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useAuth } from "../../../src/contexts/AuthContext";
-import { getAvailabilityPeriod } from "../../../src/services/availabilityPeriods";
-import { getMonthKey, getMonthName } from "../../../src/utils/calendar";
-
-/* =========================
-   HELPERS
-========================= */
-
-function getNextMonth(base = new Date()) {
-  return new Date(base.getFullYear(), base.getMonth() + 1, 1);
-}
-
-/* =========================
-   COMPONENT
-========================= */
+import { AppHeader } from "@/src/components/AppHeader";
+import { AppScreen } from "@/src/components/AppScreen";
+import { CalendarDashboard } from "@/src/components/CalendarDashboard";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { getMockCalendarData } from "@/src/mocks/calendarMock";
+import { useState } from "react";
+import { StyleSheet, View } from "react-native";
 
 export default function LeaderDashboard() {
-  const { user } = useAuth();
-
-  if (!user || user.role !== "leader") return null;
-
-  const targetDate = useMemo(() => getNextMonth(), []);
-  const year = targetDate.getFullYear();
-  const month = targetDate.getMonth();
-  const monthKey = getMonthKey(targetDate);
-  const monthLabel = getMonthName(year, month);
-
-  const [availabilityStatus, setAvailabilityStatus] =
-    useState<"open" | "closed" | "unknown">("unknown");
-
-  const [loading, setLoading] = useState(true);
-
-  /* =========================
-     LOAD
-  ========================= */
-
-  useEffect(() => {
-    async function load() {
-      const period = await getAvailabilityPeriod(monthKey);
-      setAvailabilityStatus(period?.status ?? "closed");
-      setLoading(false);
-    }
-
-    load();
-  }, [monthKey]);
-
-  /* =========================
-     RENDER
-  ========================= */
-
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <Text>Carregando…</Text>
-      </View>
-    );
-  }
+  const { user, logout } = useAuth();
+  const [month] = useState(new Date());
 
   return (
-    <View style={styles.container}>
-      {/* HEADER */}
-      <Text style={styles.title}>Escala do Ministério</Text>
-      <Text style={styles.subtitle}>
-        Planejamento de {monthLabel}
-      </Text>
+    <AppScreen>
+      <AppHeader
+        title="Painel do Líder"
+        subtitle={user?.name}
+        onLogout={logout}
+      />
 
-      {/* STATUS CARD */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Disponibilidade dos membros</Text>
-
-        {availabilityStatus === "open" ? (
-          <Text style={[styles.statusText, styles.statusOpen]}>
-            ✅ Período aberto
-          </Text>
-        ) : (
-          <Text style={[styles.statusText, styles.statusClosed]}>
-            🔒 Período fechado
-          </Text>
-        )}
-
-        <Text style={styles.helperText}>
-          Os membros precisam informar a disponibilidade antes da
-          geração da escala.
-        </Text>
+      <View style={{ padding: 16 }}>
+        <CalendarDashboard
+          month={month}
+          data={getMockCalendarData(month)}
+        />
       </View>
-
-      {/* ACTIONS */}
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={[
-            styles.primaryButton,
-            availabilityStatus !== "open" && styles.disabled,
-          ]}
-          disabled={availabilityStatus !== "open"}
-          onPress={() => {
-            // próxima tela: gerar escala
-          }}
-        >
-          <Text style={styles.primaryText}>
-            Gerar escala do ministério
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => {
-            // próxima tela: visualizar escala existente
-          }}
-        >
-          <Text style={styles.secondaryText}>
-            Ver escala atual
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* INFO */}
-      <View style={styles.infoBox}>
-        <Text style={styles.infoText}>
-          ℹ️ Após finalizar a escala do seu ministério, o admin irá
-          consolidar a escala geral do mês.
-        </Text>
-      </View>
-    </View>
+    </AppScreen>
   );
 }
 
@@ -132,98 +34,119 @@ export default function LeaderDashboard() {
 
 const styles = StyleSheet.create({
   container: {
+    padding: 16,
+  },
+
+  monthHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  monthTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    textTransform: "capitalize",
+  },
+  nav: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+
+  weekRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+  },
+  weekDay: {
     flex: 1,
-    padding: 16,
-    backgroundColor: "#FFFFFF",
-  },
-
-  title: {
-    fontSize: 22,
-    fontWeight: "900",
-  },
-
-  subtitle: {
-    marginTop: 4,
+    textAlign: "center",
+    fontWeight: "700",
     color: "#6B7280",
-    marginBottom: 16,
   },
 
-  card: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 14,
-    padding: 16,
+  calendar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+
+  empty: {
+    width: "14.2857%",
+    aspectRatio: 1,
+  },
+
+  dayCell: {
+    width: "14.2857%",
+    aspectRatio: 1,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    marginBottom: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    marginBottom: 8,
   },
 
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    marginBottom: 6,
-    color: "#111827",
+  today: {
+    borderColor: "#2563EB",
+    borderWidth: 2,
   },
 
-  statusText: {
-    fontWeight: "900",
-    marginBottom: 6,
-  },
-
-  statusOpen: {
-    color: "#065F46",
-  },
-
-  statusClosed: {
-    color: "#991B1B",
-  },
-
-  helperText: {
-    color: "#374151",
-    fontSize: 13,
-  },
-
-  actions: {
-    gap: 10,
-  },
-
-  primaryButton: {
-    backgroundColor: "#065F46",
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-
-  primaryText: {
-    color: "#FFFFFF",
-    fontWeight: "900",
-    textAlign: "center",
-  },
-
-  secondaryButton: {
-    backgroundColor: "#E5E7EB",
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-
-  secondaryText: {
-    fontWeight: "900",
-    color: "#111827",
-    textAlign: "center",
-  },
-
-  disabled: {
-    opacity: 0.5,
-  },
-
-  infoBox: {
-    marginTop: 20,
-    backgroundColor: "#EEF2FF",
-    padding: 12,
-    borderRadius: 12,
-  },
-
-  infoText: {
-    color: "#1E3A8A",
+  dayNumber: {
     fontWeight: "700",
-    fontSize: 13,
+    marginBottom: 4,
+  },
+
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  dotPublished: {
+    backgroundColor: "#22C55E",
+  },
+  dotDraft: {
+    backgroundColor: "#F59E0B",
+  },
+  dotPending: {
+    backgroundColor: "#EF4444",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  modal: {
+    backgroundColor: "#FFFFFF",
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 12,
+    textTransform: "capitalize",
+  },
+  service: {
+    marginBottom: 12,
+  },
+  serviceTitle: {
+    fontWeight: "700",
+  },
+  person: {
+    fontSize: 14,
+    color: "#374151",
+  },
+  close: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#111827",
+    alignItems: "center",
+  },
+  closeText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
 });
