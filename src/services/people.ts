@@ -1,4 +1,3 @@
-// src/services/people.ts
 import {
   collection,
   doc,
@@ -6,108 +5,145 @@ import {
   getDocs,
   query,
   serverTimestamp,
-  setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
-
-import { SystemRole } from "../constants/role";
 import { db } from "./firebase";
 
 /* =========================
    TYPES
 ========================= */
 
+export type PersonMinistry = {
+  ministryId: string;
+  role: "leader" | "member";
+};
+
 export type Person = {
   id: string;
-  uid: string;
   name: string;
   email: string;
-  role: SystemRole;
   active: boolean;
-  createdAt?: any;
-  updatedAt?: any;
+
+  // NOVO
+  ministries: PersonMinistry[];
+
+  // LEGADO (mantemos por enquanto)
+  ministryIds: string[];
+
+  createdAt: Date;
+  updatedAt: Date;
 };
 
-export type CreatePersonInput = {
-  uid: string;
-  name: string;
-  email: string;
-  role?: SystemRole;
-};
-
-export type UpdatePersonInput = Partial<
-  Pick<Person, "name" | "email" | "role" | "active">
->;
-
-const COLLECTION = "people";
 
 /* =========================
-   CREATE
+   MAPPERS
 ========================= */
 
-export async function createPerson(input: CreatePersonInput) {
-  const ref = doc(db, COLLECTION, input.uid);
+function mapDoc(docSnap: any): Person {
+  const data = docSnap.data();
 
-  const data = {
-    uid: input.uid,
-    name: input.name,
-    email: input.email,
-    role: input.role ?? "member",
-    active: true,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  const ministries =
+    data.ministries ??
+    (data.ministryIds ?? []).map((id: string) => ({
+      ministryId: id,
+      role: "member",
+    }));
+
+  return {
+    id: docSnap.id,
+    name: data.name,
+    email: data.email,
+    active: data.active,
+    ministries,
+    ministryIds: ministries.map((m: { ministryId: any; }) => m.ministryId),
+    createdAt: data.createdAt?.toDate(),
+    updatedAt: data.updatedAt?.toDate(),
   };
-
-  await setDoc(ref, data, { merge: true });
 }
 
+
 /* =========================
-   READ
+   QUERIES
 ========================= */
 
-export async function getPersonById(uid: string): Promise<Person | null> {
-  const ref = doc(db, COLLECTION, uid);
+/**
+ * Lista todas as pessoas (admin)
+ */
+export async function listPeople(): Promise<Person[]> {
+  const snap = await getDocs(collection(db, "people"));
+  return snap.docs.map(mapDoc);
+}
+
+/**
+ * Lista apenas pessoas ativas
+ */
+export async function listActivePeople(): Promise<Person[]> {
+  const q = query(
+    collection(db, "people"),
+    where("active", "==", true)
+  );
+
+  const snap = await getDocs(q);
+  return snap.docs.map(mapDoc);
+}
+
+/**
+ * Lista pessoas ativas sem ministério
+ */
+export async function listPeopleWithoutMinistry(): Promise<Person[]> {
+  const snap = await getDocs(collection(db, "people"));
+
+  return snap.docs
+    .map(mapDoc)
+    .filter((p) => p.active && p.ministryIds.length === 0);
+}
+
+/**
+ * Busca pessoa por id (admin)
+ */
+export async function getPersonById(
+  personId: string
+): Promise<Person | null> {
+  const ref = doc(db, "people", personId);
   const snap = await getDoc(ref);
 
   if (!snap.exists()) return null;
-
-  return {
-    id: snap.id,
-    ...(snap.data() as Omit<Person, "id">),
-  };
-}
-
-export async function listPeople(): Promise<Person[]> {
-  const ref = collection(db, COLLECTION);
-  const snap = await getDocs(ref);
-
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...(d.data() as Omit<Person, "id">),
-  }));
-}
-
-export async function listActivePeople(): Promise<Person[]> {
-  const ref = collection(db, COLLECTION);
-  const q = query(ref, where("active", "==", true));
-  const snap = await getDocs(q);
-
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...(d.data() as Omit<Person, "id">),
-  }));
+  return mapDoc(snap);
 }
 
 /* =========================
-   UPDATE
+   MUTATIONS
 ========================= */
 
-export async function updatePerson(uid: string, input: UpdatePersonInput) {
-  const ref = doc(db, COLLECTION, uid);
+/**
+ * Atualiza ministérios da pessoa
+ */
+export async function updatePersonMinistries(
+  personId: string,
+  ministries: { ministryId: string; role: "leader" | "member" }[]
+): Promise<void> {
+  const ref = doc(db, "people", personId);
 
   await updateDoc(ref, {
-    ...input,
+    ministries,
+    ministryIds: ministries.map((m) => m.ministryId), // legado
+    updatedAt: serverTimestamp(),
+  });
+}
+
+
+/**
+ * Ativa / desativa pessoa
+ */
+export async function togglePersonStatus(
+  personId: string,
+  active: boolean
+): Promise<void> {
+  const ref = doc(db, "people", personId);
+
+  await updateDoc(ref, {
+    active,
     updatedAt: serverTimestamp(),
   });
 }
