@@ -1,109 +1,182 @@
-// src/app/(admin)/people.tsx
-import { useEffect, useState } from "react";
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { AppHeader } from "@/src/components/AppHeader";
+import { AppScreen } from "@/src/components/AppScreen";
+import { useAuth } from "@/src/contexts/AuthContext";
 
-import {
-  createMembership,
-  listMemberships,
-  Membership,
-  MembershipRole,
-  updateMembership
-} from "@/src/services/memberships";
-import {
-  listActiveMinistries,
-  Ministry,
-} from "@/src/services/ministries";
+import { listMinistries, Ministry } from "@/src/services/ministries";
 import {
   listPeople,
   Person,
-  updatePerson,
+  togglePersonStatus,
+  updatePersonMinistries,
 } from "@/src/services/people";
 
+import { useEffect, useMemo, useState } from "react";
 import {
-  SYSTEM_ROLE_LABEL,
-  SystemRole,
-} from "@/src/contexts/AuthContext";
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 /* =========================
-   COMPONENT
+   TYPES
+========================= */
+
+type StatusFilter = "all" | "without" | "inactive";
+
+type SelectedMinistry = {
+  ministryId: string;
+  role: "leader" | "member";
+};
+
+/* =========================
+   SCREEN
 ========================= */
 
 export default function AdminPeople() {
+  const { user, logout } = useAuth();
+
   const [people, setPeople] = useState<Person[]>([]);
   const [ministries, setMinistries] = useState<Ministry[]>([]);
-  const [memberships, setMemberships] = useState<Membership[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const [statusFilter, setStatusFilter] =
+    useState<StatusFilter>("all");
+  const [ministryFilter, setMinistryFilter] =
+    useState<string | "all">("all");
+
+  const [statusDropdownOpen, setStatusDropdownOpen] =
+    useState(false);
+  const [ministryDropdownOpen, setMinistryDropdownOpen] =
+    useState(false);
+
+  const [selected, setSelected] = useState<Person | null>(null);
+  const [selectedMinistries, setSelectedMinistries] =
+    useState<SelectedMinistry[]>([]);
+  const [active, setActive] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  /* =========================
+     DROPDOWN HELPERS
+  ========================= */
+
+  function toggleStatusDropdown() {
+    setStatusDropdownOpen((prev) => {
+      if (!prev) setMinistryDropdownOpen(false);
+      return !prev;
+    });
+  }
+
+  function toggleMinistryDropdown() {
+    setMinistryDropdownOpen((prev) => {
+      if (!prev) setStatusDropdownOpen(false);
+      return !prev;
+    });
+  }
+
+  function closeAllDropdowns() {
+    setStatusDropdownOpen(false);
+    setMinistryDropdownOpen(false);
+  }
 
   /* =========================
      LOAD
   ========================= */
 
-  async function load() {
-    setLoading(true);
-    const [p, m, mem] = await Promise.all([
-      listPeople(),
-      listActiveMinistries(),
-      listMemberships(),
-    ]);
-
-    setPeople(p);
-    setMinistries(m);
-    setMemberships(mem);
-    setLoading(false);
-  }
-
   useEffect(() => {
-    load();
+    (async () => {
+      const [p, m] = await Promise.all([
+        listPeople(),
+        listMinistries(),
+      ]);
+
+      setPeople(p);
+      setMinistries(m.filter((x) => x.active));
+    })();
   }, []);
 
   /* =========================
-     ACTIONS
+     FILTER
   ========================= */
 
-  async function changeRole(
-    person: Person,
-    role: SystemRole
-  ) {
-    await updatePerson(person.uid, { role });
-    await load();
+  const filteredPeople = useMemo(() => {
+    let result = [...people];
+
+    if (statusFilter === "inactive") {
+      result = result.filter((p) => !p.active);
+    }
+
+    if (statusFilter === "without") {
+      result = result.filter(
+        (p) => p.active && p.ministryIds.length === 0
+      );
+    }
+
+    if (ministryFilter !== "all") {
+      result = result.filter((p) =>
+        p.ministryIds.includes(ministryFilter)
+      );
+    }
+
+    return result;
+  }, [people, statusFilter, ministryFilter]);
+
+  /* =========================
+     MODAL
+  ========================= */
+
+  function openManage(person: Person) {
+    setSelected(person);
+    setSelectedMinistries(
+      person.ministryIds.map((id) => ({
+        ministryId: id,
+        role: "member",
+      }))
+    );
+    setActive(person.active);
+    setModalOpen(true);
   }
 
-  async function addMembership(
-    person: Person,
-    ministry: Ministry
-  ) {
-    await createMembership({
-      personId: person.uid,
-      ministryId: ministry.id,
-      role: "member",
-      status: "active",
-      personName: person.name,
-      personEmail: person.email,
-      ministryName: ministry.name,
-    });
-
-    await load();
+  function closeModal() {
+    setSelected(null);
+    setSelectedMinistries([]);
+    setModalOpen(false);
   }
 
-  async function toggleMembership(mem: Membership) {
-    await updateMembership(mem.id, {
-      status: mem.status === "active" ? "inactive" : "active",
-    });
-    await load();
+  async function handleSave() {
+    if (!selected) return;
+
+    await updatePersonMinistries(
+      selected.id,
+      selectedMinistries
+    );
+
+    if (active !== selected.active) {
+      await togglePersonStatus(selected.id, active);
+    }
+
+    const updated = await listPeople();
+    setPeople(updated);
+    closeModal();
   }
 
-  async function changeMembershipRole(
-    mem: Membership,
-    role: MembershipRole
+  function toggleMinistry(ministryId: string) {
+    setSelectedMinistries((prev) =>
+      prev.some((m) => m.ministryId === ministryId)
+        ? prev.filter((m) => m.ministryId !== ministryId)
+        : [...prev, { ministryId, role: "member" }]
+    );
+  }
+
+  function updateRole(
+    ministryId: string,
+    role: "leader" | "member"
   ) {
-    await updateMembership(mem.id, { role });
-    await load();
+    setSelectedMinistries((prev) =>
+      prev.map((m) =>
+        m.ministryId === ministryId ? { ...m, role } : m
+      )
+    );
   }
 
   /* =========================
@@ -111,109 +184,290 @@ export default function AdminPeople() {
   ========================= */
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Pessoas</Text>
+    <AppScreen>
+      <AppHeader
+        title="Pessoas"
+        subtitle={`${user?.name} · Administrador`}
+        onLogout={logout}
+      />
 
-      <ScrollView>
-        {loading && <Text>Carregando…</Text>}
+      {/* OVERLAY PARA FECHAR DROPDOWNS */}
+      {(statusDropdownOpen || ministryDropdownOpen) && (
+        <Pressable
+          style={styles.dropdownOverlay}
+          onPress={closeAllDropdowns}
+        />
+      )}
 
-        {people.map((p) => (
-          <View key={p.uid} style={styles.personCard}>
-            <Text style={styles.personName}>{p.name}</Text>
-            <Text style={styles.personEmail}>{p.email}</Text>
+      <View style={styles.container}>
+        {/* FILTER ROW */}
+        <View style={styles.filtersRow}>
+          {/* STATUS DROPDOWN */}
+          <View style={styles.dropdownWrapper}>
+            <Pressable
+              style={styles.dropdown}
+              onPress={toggleStatusDropdown}
+            >
+              <Text style={styles.dropdownText}>
+                {statusFilter === "all"
+                  ? "Todas"
+                  : statusFilter === "without"
+                  ? "Sem ministério"
+                  : "Inativas"}
+              </Text>
+            </Pressable>
 
-            {/* SYSTEM ROLE */}
-            <View style={styles.roleRow}>
-              {(["admin", "leader", "member"] as SystemRole[]).map(
-                (r) => (
-                  <TouchableOpacity
-                    key={r}
-                    style={[
-                      styles.roleBtn,
-                      p.role === r && styles.roleActive,
-                    ]}
-                    onPress={() => changeRole(p, r)}
-                  >
-                    <Text
-                      style={[
-                        styles.roleText,
-                        p.role === r && { color: "#FFFFFF" },
-                      ]}
-                    >
-                      {SYSTEM_ROLE_LABEL[r]}
-                    </Text>
-                  </TouchableOpacity>
-                )
-              )}
+            {statusDropdownOpen && (
+              <View style={styles.dropdownMenuLeft}>
+                <DropdownItem
+                  label="Todas"
+                  onPress={() => {
+                    setStatusFilter("all");
+                    closeAllDropdowns();
+                  }}
+                />
+                <DropdownItem
+                  label="Sem ministério"
+                  onPress={() => {
+                    setStatusFilter("without");
+                    closeAllDropdowns();
+                  }}
+                />
+                <DropdownItem
+                  label="Inativas"
+                  onPress={() => {
+                    setStatusFilter("inactive");
+                    closeAllDropdowns();
+                  }}
+                />
+              </View>
+            )}
+          </View>
+
+          {/* MINISTRY DROPDOWN */}
+          <View style={styles.dropdownWrapper}>
+            <Pressable
+              style={styles.dropdown}
+              onPress={toggleMinistryDropdown}
+            >
+              <Text style={styles.dropdownText}>
+                {ministryFilter === "all"
+                  ? "Todos ministérios"
+                  : ministries.find(
+                      (m) => m.id === ministryFilter
+                    )?.name}
+              </Text>
+            </Pressable>
+
+            {ministryDropdownOpen && (
+              <View style={styles.dropdownMenuRight}>
+                <DropdownItem
+                  label="Todos ministérios"
+                  onPress={() => {
+                    setMinistryFilter("all");
+                    closeAllDropdowns();
+                  }}
+                />
+                {ministries.map((m) => (
+                  <DropdownItem
+                    key={m.id}
+                    label={m.name}
+                    onPress={() => {
+                      setMinistryFilter(m.id);
+                      closeAllDropdowns();
+                    }}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* LIST */}
+        {filteredPeople.length === 0 ? (
+          <Text style={styles.empty}>
+            Nenhuma pessoa encontrada
+          </Text>
+        ) : (
+          filteredPeople.map((p) => (
+            <View key={p.id} style={styles.card}>
+              <View>
+                <Text style={styles.name}>{p.name}</Text>
+                <Text style={styles.email}>{p.email}</Text>
+
+                <Text
+                  style={[
+                    styles.ministries,
+                    p.ministryIds.length === 0 &&
+                      styles.noMinistry,
+                  ]}
+                >
+                  {p.ministryIds.length === 0
+                    ? "⚠️ Sem ministério"
+                    : `Ministérios: ${p.ministryIds.length}`}
+                </Text>
+              </View>
+
+              <Pressable
+                style={styles.manage}
+                onPress={() => openManage(p)}
+              >
+                <Text style={styles.manageText}>
+                  Gerenciar
+                </Text>
+              </Pressable>
             </View>
+          ))
+        )}
+      </View>
 
-            {/* MINISTRIES */}
+      {/* MODAL */}
+      <Modal visible={modalOpen} transparent animationType="slide">
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalName}>
+              {selected?.name}
+            </Text>
+            <Text style={styles.modalEmail}>
+              {selected?.email}
+            </Text>
+
+            <Pressable
+              style={[
+                styles.statusPill,
+                active ? styles.active : styles.inactive,
+              ]}
+              onPress={() => setActive((a) => !a)}
+            >
+              <Text style={styles.statusText}>
+                {active ? "Ativa" : "Inativa"}
+              </Text>
+            </Pressable>
+
+            <Text style={styles.sectionTitle}>
+              Ministérios
+            </Text>
+
             {ministries.map((m) => {
-              const mem = memberships.find(
-                (x) =>
-                  x.personId === p.uid &&
-                  x.ministryId === m.id
+              const entry = selectedMinistries.find(
+                (x) => x.ministryId === m.id
               );
+
+              const belongs = !!entry;
 
               return (
                 <View key={m.id} style={styles.ministryRow}>
-                  <Text>{m.name}</Text>
-
-                  {mem ? (
-                    <View style={{ gap: 4, alignItems: "flex-end" }}>
-                      {/* ROLE NO MINISTÉRIO */}
-                      <View style={{ flexDirection: "row", gap: 6 }}>
-                        {(["leader", "member"] as MembershipRole[]).map(
-                          (r) => (
-                            <TouchableOpacity
-                              key={r}
-                              style={[
-                                styles.roleMini,
-                                mem.role === r && styles.roleMiniActive,
-                              ]}
-                              onPress={() => changeMembershipRole(mem, r)}
-                            >
-                              <Text
-                                style={[
-                                  styles.roleMiniText,
-                                  mem.role === r && { color: "#FFFFFF" },
-                                ]}
-                              >
-                                {r === "leader" ? "Líder" : "Membro"}
-                              </Text>
-                            </TouchableOpacity>
-                          )
-                        )}
-                      </View>
-
-                      {/* STATUS */}
-                      <TouchableOpacity
-                        style={[
-                          styles.toggle,
-                          mem.status === "inactive" && {
-                            backgroundColor: "#FEE2E2",
-                          },
-                        ]}
-                        onPress={() => toggleMembership(mem)}
-                      >
-                        <Text style={styles.toggleText}>{mem.status}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.addBtn}
-                      onPress={() => addMembership(p, m)}
+                  <Pressable
+                    style={[
+                      styles.belongsBtn,
+                      belongs && styles.belongsBtnActive,
+                    ]}
+                    onPress={() => toggleMinistry(m.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.belongsIcon,
+                        !belongs && { color: "#111827" },
+                      ]}
                     >
-                      <Text style={styles.addText}>Vincular</Text>
-                    </TouchableOpacity>
+                      {belongs ? "✓" : "+"}
+                    </Text>
+                  </Pressable>
+
+                  <Text style={styles.ministryName}>
+                    {m.name}
+                  </Text>
+
+                  {belongs && (
+                    <View style={styles.roleSwitch}>
+                      <RoleBtn
+                        label="Membro"
+                        active={entry.role === "member"}
+                        onPress={() =>
+                          updateRole(m.id, "member")
+                        }
+                      />
+                      <RoleBtn
+                        label="Líder"
+                        active={entry.role === "leader"}
+                        onPress={() =>
+                          updateRole(m.id, "leader")
+                        }
+                      />
+                    </View>
                   )}
                 </View>
               );
             })}
+
+            <View style={styles.footer}>
+              <Pressable
+                style={styles.cancel}
+                onPress={closeModal}
+              >
+                <Text>Cancelar</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.save}
+                onPress={handleSave}
+              >
+                <Text style={styles.saveText}>
+                  Salvar
+                </Text>
+              </Pressable>
+            </View>
           </View>
-        ))}
-      </ScrollView>
-    </View>
+        </View>
+      </Modal>
+    </AppScreen>
+  );
+}
+
+/* =========================
+   COMPONENTS
+========================= */
+
+function DropdownItem({
+  label,
+  onPress,
+}: {
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress}>
+      <Text style={styles.dropdownItem}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function RoleBtn({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.roleBtn,
+        active && styles.roleActive,
+      ]}
+    >
+      <Text
+        style={[
+          styles.roleText,
+          active && styles.roleTextActive,
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -222,86 +476,187 @@ export default function AdminPeople() {
 ========================= */
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-    backgroundColor: "#FFFFFF",
-    gap: 16,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "800",
-  },
-  personCard: {
-    borderBottomWidth: 1,
-    borderColor: "#E5E7EB",
-    paddingVertical: 12,
-    gap: 8,
-  },
-  personName: {
-    fontWeight: "800",
-  },
-  personEmail: {
-    color: "#6B7280",
+  container: { padding: 16 },
+
+  filtersRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
   },
 
-  roleRow: {
-    flexDirection: "row",
-    gap: 6,
-    marginVertical: 6,
+  dropdownWrapper: { position: "relative", zIndex: 20 },
+
+  dropdownOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
   },
-  roleBtn: {
+
+  dropdown: {
     paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    backgroundColor: "#E5E7EB",
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
-  roleActive: {
+
+  dropdownText: { fontWeight: "700" },
+
+  dropdownMenuLeft: {
+    position: "absolute",
+    top: 42,
+    left: 0,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    minWidth: 180,
+    zIndex: 30,
+    elevation: 6,
+  },
+
+  dropdownMenuRight: {
+    position: "absolute",
+    top: 42,
+    right: 0,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    minWidth: 200,
+    zIndex: 30,
+    elevation: 6,
+  },
+
+  dropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    fontWeight: "600",
+  },
+
+  empty: { textAlign: "center", marginTop: 40 },
+
+  card: {
+    backgroundColor: "#F9FAFB",
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+
+  name: { fontWeight: "800" },
+  email: { fontSize: 13, color: "#6B7280" },
+
+  ministries: { marginTop: 6 },
+  noMinistry: { color: "#DC2626", fontWeight: "700" },
+
+  manage: {
     backgroundColor: "#2563EB",
+    padding: 10,
+    borderRadius: 12,
   },
-  roleText: {
-    fontWeight: "800",
-    fontSize: 12,
-    color: "#111827",
+  manageText: { color: "#fff", fontWeight: "800" },
+
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
   },
+
+  modal: {
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 20,
+  },
+
+  modalName: { fontSize: 18, fontWeight: "800" },
+  modalEmail: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginBottom: 12,
+  },
+
+  statusPill: {
+    padding: 8,
+    borderRadius: 999,
+    alignSelf: "flex-start",
+    marginBottom: 12,
+  },
+  active: { backgroundColor: "#DCFCE7" },
+  inactive: { backgroundColor: "#FEE2E2" },
+  statusText: { fontWeight: "700" },
+
+  sectionTitle: { fontWeight: "700", marginBottom: 8 },
 
   ministryRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
   },
-  addBtn: {
-    backgroundColor: "#DBEAFE",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
+
+  belongsBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  addText: {
-    fontWeight: "800",
-    fontSize: 12,
+
+  belongsBtnActive: {
+    backgroundColor: "#2563EB",
+    borderColor: "#2563EB",
   },
-  toggle: {
-    backgroundColor: "#D1FAE5",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
+
+  belongsIcon: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#FFFFFF",
   },
-  toggleText: {
-    fontWeight: "800",
-    fontSize: 12,
-  },
-  roleMini: {
-    backgroundColor: "#CBD5E1",
-    paddingHorizontal: 8,
+
+  ministryName: { flex: 1, fontWeight: "700" },
+
+  roleSwitch: { flexDirection: "row", gap: 6 },
+
+  roleBtn: {
     paddingVertical: 4,
-    borderRadius: 999,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: "#E5E7EB",
   },
-  roleMiniActive: {
-    backgroundColor: "#1E3A8A",
+
+  roleActive: { backgroundColor: "#2563EB" },
+
+  roleText: { fontSize: 12, fontWeight: "700" },
+
+  roleTextActive: { color: "#fff" },
+
+  footer: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 20,
   },
-  roleMiniText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#111827",
+
+  cancel: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
   },
+
+  save: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "#2563EB",
+  },
+
+  saveText: { color: "#fff", fontWeight: "800" },
 });

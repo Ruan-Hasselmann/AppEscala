@@ -7,8 +7,8 @@ import {
   useState,
 } from "react";
 
+import { createPerson, getPersonById } from "@/src/services/authPeople";
 import { auth } from "@/src/services/firebase";
-import { createPerson, getPersonById } from "@/src/services/people";
 import { SYSTEM_ROLE_LABEL, SystemRole } from "../constants/role";
 
 /* =========================
