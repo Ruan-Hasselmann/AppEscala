@@ -22,6 +22,8 @@ export type Service = {
   label: string; // "Manhã", "Noite", "18h"
   order: number; // 1, 2, 3...
   createdAt?: Date;
+  type: "single" | "multiple";
+  shift?: "manha" | "tarde" | "noite" | "custom";
 };
 
 const servicesRef = collection(db, "services");
@@ -49,6 +51,8 @@ export async function getServicesByServiceDay(
       label: data.label,
       order: data.order ?? 1,
       createdAt: data.createdAt?.toDate?.(),
+      type: data.type ?? "single",
+      shift: data.shift,
     };
   });
 }

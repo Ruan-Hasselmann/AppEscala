@@ -5,6 +5,7 @@ import {
     CalendarDayData,
 } from "@/src/components/CalendarDashboard";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { duplicateServiceDays } from "@/src/services/duplicateServiceDays";
 import {
     createServiceDay,
     deleteServiceDay,
@@ -20,6 +21,7 @@ import {
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import {
+    Alert,
     Dimensions,
     KeyboardAvoidingView,
     Modal,
@@ -147,29 +149,17 @@ export default function AdminServiceDays() {
             await deleteService(s.id);
         }
 
-        // 3) cria services conforme quantidade
-        if (servicesCount === 1) {
+        // 3) cria services EXATAMENTE como estão no draft
+        for (let i = 0; i < draftServices.length; i++) {
+            const s = draftServices[i];
+
             await createService({
                 serviceDayId: day.id,
-                label: "Culto",
-                order: 1,
-                type: "single",
+                label: s.label,
+                order: i + 1,
+                type: draftServices.length === 1 ? "single" : "multiple",
+                shift: s.shift ?? "custom",
             });
-        } else {
-            const labels = ["Manhã", "Tarde", "Noite"] as const;
-            const shifts = ["manha", "tarde", "noite"] as const;
-
-            for (let i = 0; i < draftServices.length; i++) {
-                const s = draftServices[i];
-
-                await createService({
-                    serviceDayId: day.id,
-                    label: s.label,
-                    order: i + 1,
-                    type: draftServices.length === 1 ? "single" : "multiple",
-                    shift: s.shift ?? "custom",
-                });
-            }
         }
 
         // 4) recarrega a lista do modal SEM depender de selectedServiceDay (evita bug da 1ª vez)
@@ -194,10 +184,27 @@ export default function AdminServiceDays() {
         setNewServiceLabel("");
     }
 
-    async function removeService(serviceId: string) {
-        if (!selectedServiceDay) return;
-        await deleteService(serviceId);
-        await loadServicesForDay(selectedServiceDay.id);
+    async function handleDuplicateMonth() {
+        try {
+            const sourceMonth = new Date(
+                month.getFullYear(),
+                month.getMonth() - 1,
+                1
+            );
+
+            const targetMonth = month;
+
+            await duplicateServiceDays(sourceMonth, targetMonth);
+
+            await load();
+
+            Alert.alert(
+                "Sucesso",
+                "Cultos duplicados com sucesso."
+            );
+        } catch (err: any) {
+            Alert.alert("Atenção", err.message);
+        }
     }
 
     /* =========================
@@ -292,7 +299,13 @@ export default function AdminServiceDays() {
                         data={mapServiceDaysToCalendar(serviceDays)}
                         onDayPress={(day) => onDayPress(day.date)}
                     />
+
                 </View>
+                <Pressable style={styles.addBtn} onPress={handleDuplicateMonth}>
+                    <Text style={{ fontWeight: "700", color: "#ffffff" }}>
+                        Duplicar mês anterior
+                    </Text>
+                </Pressable>
             </View>
 
             <Modal
@@ -608,6 +621,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12,
         borderRadius: 12,
         backgroundColor: "#111827",
+        alignItems: "center",
     },
     addText: { color: "#FFFFFF", fontWeight: "800" },
 

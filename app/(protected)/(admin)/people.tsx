@@ -1,307 +1,163 @@
-// src/app/(admin)/people.tsx
-import { useEffect, useState } from "react";
+import { db } from "@/src/services/firebase";
 import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-
-import {
-  createMembership,
-  listMemberships,
-  Membership,
-  MembershipRole,
-  updateMembership
-} from "@/src/services/memberships";
-import {
-  listActiveMinistries,
-  Ministry,
-} from "@/src/services/ministries";
-import {
-  listPeople,
-  Person,
-  updatePerson,
-} from "@/src/services/people";
-
-import {
-  SYSTEM_ROLE_LABEL,
-  SystemRole,
-} from "@/src/contexts/AuthContext";
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 
 /* =========================
-   COMPONENT
+   TYPES
 ========================= */
 
-export default function AdminPeople() {
-  const [people, setPeople] = useState<Person[]>([]);
-  const [ministries, setMinistries] = useState<Ministry[]>([]);
-  const [memberships, setMemberships] = useState<Membership[]>([]);
-  const [loading, setLoading] = useState(true);
+export type Ministry = {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  isActive: boolean;
+  leaderIds: string[];
+  createdAt: Date;
+  updatedAt: Date;
+};
 
-  /* =========================
-     LOAD
-  ========================= */
+type CreateMinistryInput = {
+  name: string;
+  description?: string;
+  leaderIds?: string[];
+};
 
-  async function load() {
-    setLoading(true);
-    const [p, m, mem] = await Promise.all([
-      listPeople(),
-      listActiveMinistries(),
-      listMemberships(),
-    ]);
+/* =========================
+   HELPERS
+========================= */
 
-    setPeople(p);
-    setMinistries(m);
-    setMemberships(mem);
-    setLoading(false);
-  }
+// gera slug seguro e consistente
+function generateSlug(name: string) {
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
 
-  useEffect(() => {
-    load();
-  }, []);
+function mapDoc(docSnap: any): Ministry {
+  const data = docSnap.data();
 
-  /* =========================
-     ACTIONS
-  ========================= */
-
-  async function changeRole(
-    person: Person,
-    role: SystemRole
-  ) {
-    await updatePerson(person.uid, { role });
-    await load();
-  }
-
-  async function addMembership(
-    person: Person,
-    ministry: Ministry
-  ) {
-    await createMembership({
-      personId: person.uid,
-      ministryId: ministry.id,
-      role: "member",
-      status: "active",
-      personName: person.name,
-      personEmail: person.email,
-      ministryName: ministry.name,
-    });
-
-    await load();
-  }
-
-  async function toggleMembership(mem: Membership) {
-    await updateMembership(mem.id, {
-      status: mem.status === "active" ? "inactive" : "active",
-    });
-    await load();
-  }
-
-  async function changeMembershipRole(
-    mem: Membership,
-    role: MembershipRole
-  ) {
-    await updateMembership(mem.id, { role });
-    await load();
-  }
-
-  /* =========================
-     RENDER
-  ========================= */
-
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Pessoas</Text>
-
-      <ScrollView>
-        {loading && <Text>Carregando…</Text>}
-
-        {people.map((p) => (
-          <View key={p.uid} style={styles.personCard}>
-            <Text style={styles.personName}>{p.name}</Text>
-            <Text style={styles.personEmail}>{p.email}</Text>
-
-            {/* SYSTEM ROLE */}
-            <View style={styles.roleRow}>
-              {(["admin", "leader", "member"] as SystemRole[]).map(
-                (r) => (
-                  <TouchableOpacity
-                    key={r}
-                    style={[
-                      styles.roleBtn,
-                      p.role === r && styles.roleActive,
-                    ]}
-                    onPress={() => changeRole(p, r)}
-                  >
-                    <Text
-                      style={[
-                        styles.roleText,
-                        p.role === r && { color: "#FFFFFF" },
-                      ]}
-                    >
-                      {SYSTEM_ROLE_LABEL[r]}
-                    </Text>
-                  </TouchableOpacity>
-                )
-              )}
-            </View>
-
-            {/* MINISTRIES */}
-            {ministries.map((m) => {
-              const mem = memberships.find(
-                (x) =>
-                  x.personId === p.uid &&
-                  x.ministryId === m.id
-              );
-
-              return (
-                <View key={m.id} style={styles.ministryRow}>
-                  <Text>{m.name}</Text>
-
-                  {mem ? (
-                    <View style={{ gap: 4, alignItems: "flex-end" }}>
-                      {/* ROLE NO MINISTÉRIO */}
-                      <View style={{ flexDirection: "row", gap: 6 }}>
-                        {(["leader", "member"] as MembershipRole[]).map(
-                          (r) => (
-                            <TouchableOpacity
-                              key={r}
-                              style={[
-                                styles.roleMini,
-                                mem.role === r && styles.roleMiniActive,
-                              ]}
-                              onPress={() => changeMembershipRole(mem, r)}
-                            >
-                              <Text
-                                style={[
-                                  styles.roleMiniText,
-                                  mem.role === r && { color: "#FFFFFF" },
-                                ]}
-                              >
-                                {r === "leader" ? "Líder" : "Membro"}
-                              </Text>
-                            </TouchableOpacity>
-                          )
-                        )}
-                      </View>
-
-                      {/* STATUS */}
-                      <TouchableOpacity
-                        style={[
-                          styles.toggle,
-                          mem.status === "inactive" && {
-                            backgroundColor: "#FEE2E2",
-                          },
-                        ]}
-                        onPress={() => toggleMembership(mem)}
-                      >
-                        <Text style={styles.toggleText}>{mem.status}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.addBtn}
-                      onPress={() => addMembership(p, m)}
-                    >
-                      <Text style={styles.addText}>Vincular</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        ))}
-      </ScrollView>
-    </View>
-  );
+  return {
+    id: docSnap.id,
+    name: data.name,
+    slug: data.slug,
+    description: data.description,
+    isActive: data.isActive,
+    leaderIds: data.leaderIds ?? [],
+    createdAt: data.createdAt?.toDate(),
+    updatedAt: data.updatedAt?.toDate(),
+  };
 }
 
 /* =========================
-   STYLES
+   QUERIES
 ========================= */
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-    backgroundColor: "#FFFFFF",
-    gap: 16,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "800",
-  },
-  personCard: {
-    borderBottomWidth: 1,
-    borderColor: "#E5E7EB",
-    paddingVertical: 12,
-    gap: 8,
-  },
-  personName: {
-    fontWeight: "800",
-  },
-  personEmail: {
-    color: "#6B7280",
-  },
+export async function getMinistries(): Promise<Ministry[]> {
+  const snap = await getDocs(collection(db, "ministries"));
+  return snap.docs.map(mapDoc);
+}
 
-  roleRow: {
-    flexDirection: "row",
-    gap: 6,
-    marginVertical: 6,
-  },
-  roleBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    backgroundColor: "#E5E7EB",
-  },
-  roleActive: {
-    backgroundColor: "#2563EB",
-  },
-  roleText: {
-    fontWeight: "800",
-    fontSize: 12,
-    color: "#111827",
-  },
+export async function getActiveMinistries(): Promise<Ministry[]> {
+  const q = query(
+    collection(db, "ministries"),
+    where("isActive", "==", true)
+  );
 
-  ministryRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  addBtn: {
-    backgroundColor: "#DBEAFE",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  addText: {
-    fontWeight: "800",
-    fontSize: 12,
-  },
-  toggle: {
-    backgroundColor: "#D1FAE5",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  toggleText: {
-    fontWeight: "800",
-    fontSize: 12,
-  },
-  roleMini: {
-    backgroundColor: "#CBD5E1",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  roleMiniActive: {
-    backgroundColor: "#1E3A8A",
-  },
-  roleMiniText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#111827",
-  },
-});
+  const snap = await getDocs(q);
+  return snap.docs.map(mapDoc);
+}
+
+export async function getMinistriesByLeader(
+  personId: string
+): Promise<Ministry[]> {
+  const q = query(
+    collection(db, "ministries"),
+    where("leaderIds", "array-contains", personId),
+    where("isActive", "==", true)
+  );
+
+  const snap = await getDocs(q);
+  return snap.docs.map(mapDoc);
+}
+
+export async function getMinistryById(
+  ministryId: string
+): Promise<Ministry | null> {
+  const ref = doc(db, "ministries", ministryId);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) return null;
+  return mapDoc(snap);
+}
+
+/* =========================
+   MUTATIONS
+========================= */
+
+export async function createMinistry(
+  input: CreateMinistryInput
+): Promise<void> {
+  const slug = generateSlug(input.name);
+
+  // garante slug único
+  const slugQuery = query(
+    collection(db, "ministries"),
+    where("slug", "==", slug)
+  );
+  const existing = await getDocs(slugQuery);
+
+  if (!existing.empty) {
+    throw new Error("Já existe um ministério com esse nome.");
+  }
+
+  await addDoc(collection(db, "ministries"), {
+    name: input.name,
+    slug,
+    description: input.description ?? "",
+    isActive: true,
+    leaderIds: input.leaderIds ?? [],
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function updateMinistry(
+  ministryId: string,
+  data: {
+    name?: string;
+    description?: string;
+    leaderIds?: string[];
+  }
+): Promise<void> {
+  const ref = doc(db, "ministries", ministryId);
+
+  await updateDoc(ref, {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function toggleMinistryStatus(
+  ministryId: string,
+  isActive: boolean
+): Promise<void> {
+  const ref = doc(db, "ministries", ministryId);
+
+  await updateDoc(ref, {
+    isActive,
+    updatedAt: serverTimestamp(),
+  });
+}
