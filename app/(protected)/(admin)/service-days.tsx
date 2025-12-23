@@ -20,6 +20,7 @@ import {
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import {
+    Dimensions,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -38,6 +39,8 @@ type DraftService = {
     label: string;
     shift?: "manha" | "tarde" | "noite" | "custom";
 };
+
+const { width } = Dimensions.get("window");
 
 /* =========================
    HELPERS
@@ -283,12 +286,13 @@ export default function AdminServiceDays() {
                         <Text style={styles.nav}>▶</Text>
                     </Pressable>
                 </View>
-
-                <CalendarDashboard
-                    month={month}
-                    data={mapServiceDaysToCalendar(serviceDays)}
-                    onDayPress={(day) => onDayPress(day.date)}
-                />
+                <View style={styles.calendarWrapper}>
+                    <CalendarDashboard
+                        month={month}
+                        data={mapServiceDaysToCalendar(serviceDays)}
+                        onDayPress={(day) => onDayPress(day.date)}
+                    />
+                </View>
             </View>
 
             <Modal
@@ -316,7 +320,7 @@ export default function AdminServiceDays() {
                             </Text>
 
                             <Text style={styles.sectionTitle}>
-                                Selecione a quantidade de cultos.
+                                Selecione quantos cultos este dia terá.
                             </Text>
 
                             <View style={styles.countRow}>
@@ -640,5 +644,11 @@ const styles = StyleSheet.create({
     saveText: {
         fontWeight: "800",
         color: "#FFFFFF",
+    },
+    calendarWrapper: {
+        alignSelf: "center",
+        width: Platform.OS === "web"
+            ? Math.min(800, width * 0.9)
+            : "100%",
     },
 });

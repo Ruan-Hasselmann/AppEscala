@@ -7,7 +7,7 @@ import { getServiceDaysByMonth, ServiceDay } from "@/src/services/serviceDays";
 import { getServicesByServiceDay } from "@/src/services/services";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Dimensions, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 async function mapToCalendarData(
   serviceDays: ServiceDay[]
@@ -28,6 +28,8 @@ async function mapToCalendarData(
 
   return result;
 }
+
+const { width } = Dimensions.get("window");
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
@@ -98,10 +100,12 @@ export default function AdminDashboard() {
         </View>
 
         {/* CALENDÁRIO */}
-        <CalendarDashboard
-          month={month}
-          data={calendarData}
-        />
+        <View style={styles.calendarWrapper}>
+          <CalendarDashboard
+            month={month}
+            data={calendarData}
+          />
+        </View>
       </View>
     </AppScreen>
   );
@@ -227,5 +231,11 @@ const styles = StyleSheet.create({
   closeText: {
     color: "#FFFFFF",
     fontWeight: "700",
+  },
+  calendarWrapper: {
+    alignSelf: "center",
+    width: Platform.OS === "web"
+      ? Math.min(800, width * 0.9)
+      : "100%",
   },
 });
