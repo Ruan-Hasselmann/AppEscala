@@ -10,8 +10,9 @@ import {
   togglePersonStatus,
   updatePersonMinistries,
 } from "@/src/services/people";
+import { useFocusEffect } from "expo-router";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -70,9 +71,11 @@ export default function AdminPeople() {
     setMinistries(m.filter((x) => x.active));
   }
 
-  useEffect(() => {
-    load();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      load()
+    }, [])
+  );
 
   /* =========================
      FILTER

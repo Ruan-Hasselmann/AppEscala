@@ -3,9 +3,9 @@ import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Ministry } from "@/src/services/ministries";
 import {
-    Person,
-    togglePersonStatus,
-    updatePersonMinistries,
+  Person,
+  togglePersonStatus,
+  updatePersonMinistries,
 } from "@/src/services/people";
 
 /* =========================
@@ -123,7 +123,7 @@ export function PersonManageModal({
             onPress={() => setActive((a) => !a)}
           >
             <Text style={styles.statusText}>
-              {active ? "Ativa" : "Inativa"}
+              {active ? "Ativo" : "Inativo"}
             </Text>
           </Pressable>
 

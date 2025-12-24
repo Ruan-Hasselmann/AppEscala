@@ -7,8 +7,8 @@ import { listPeople, Person } from "@/src/services/people";
 
 import { PersonManageModal } from "@/src/components/admin/PersonManageModal";
 
-import { useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 export default function AdminMinistryMembers() {
@@ -54,9 +54,11 @@ export default function AdminMinistryMembers() {
     setPeople(filtered);
   }
 
-  useEffect(() => {
-    load();
-  }, [ministryId]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [ministryId])
+  );
 
   /* =========================
      RENDER
