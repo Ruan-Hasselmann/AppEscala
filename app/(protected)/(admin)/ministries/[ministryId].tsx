@@ -1,46 +1,66 @@
 import { AppHeader } from "@/src/components/AppHeader";
 import { AppScreen } from "@/src/components/AppScreen";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { listMinistries } from "@/src/services/ministries";
+
+import { listMinistries, Ministry } from "@/src/services/ministries";
 import { listPeople, Person } from "@/src/services/people";
+
+import { PersonManageModal } from "@/src/components/admin/PersonManageModal";
+
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 export default function AdminMinistryMembers() {
   const { ministryId } = useLocalSearchParams<{ ministryId: string }>();
   const { user, logout } = useAuth();
 
   const [people, setPeople] = useState<Person[]>([]);
+  const [ministries, setMinistries] = useState<Ministry[]>([]);
   const [ministryName, setMinistryName] = useState("");
 
-  useEffect(() => {
-    async function load() {
-      const [p, m] = await Promise.all([
-        listPeople(),
-        listMinistries(),
-      ]);
+  const [selected, setSelected] = useState<Person | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
-      const ministry = m.find((x) => x.id === ministryId);
-      setMinistryName(ministry?.name ?? "");
+  /* =========================
+     LOAD
+  ========================= */
 
-      const filtered = p
-        .filter((person) =>
-          person.ministries.some(
-            (x) => x.ministryId === ministryId
-          )
+  async function load() {
+    const [p, m] = await Promise.all([
+      listPeople(),
+      listMinistries(),
+    ]);
+
+    setMinistries(m);
+
+    const ministry = m.find((x) => x.id === ministryId);
+    setMinistryName(ministry?.name ?? "");
+
+    const filtered = p
+      .filter((person) =>
+        person.ministries.some(
+          (x) => x.ministryId === ministryId
         )
-        .sort((a, b) =>
-          a.name.localeCompare(b.name, "pt-BR", {
-            sensitivity: "base",
-          })
-        );
+      )
+      .sort((a, b) =>
+        a.name.localeCompare(
+          b.name,
+          "pt-BR",
+          { sensitivity: "base" }
+        )
+      );
 
-      setPeople(filtered);
-    }
+    setPeople(filtered);
+  }
 
+  useEffect(() => {
     load();
   }, [ministryId]);
+
+  /* =========================
+     RENDER
+  ========================= */
 
   return (
     <AppScreen>
@@ -66,27 +86,55 @@ export default function AdminMinistryMembers() {
                 <View>
                   <Text style={styles.name}>{p.name}</Text>
                   <Text style={styles.email}>{p.email}</Text>
+
+                  <Text
+                    style={
+                      entry?.role === "leader"
+                        ? styles.leader
+                        : styles.member
+                    }
+                  >
+                    {entry?.role === "leader"
+                      ? "⭐ Líder"
+                      : "Membro"}
+                  </Text>
                 </View>
 
-                <Text
-                  style={
-                    entry?.role === "leader"
-                      ? styles.leader
-                      : styles.member
-                  }
+                <Pressable
+                  style={styles.manage}
+                  onPress={() => {
+                    setSelected(p);
+                    setModalOpen(true);
+                  }}
                 >
-                  {entry?.role === "leader"
-                    ? "⭐ Líder"
-                    : "Membro"}
-                </Text>
+                  <Text style={styles.manageText}>
+                    Gerenciar
+                  </Text>
+                </Pressable>
               </View>
             );
           })
         )}
       </View>
+
+      {/* MODAL DE EDIÇÃO (REAPROVEITADO) */}
+      <PersonManageModal
+        visible={modalOpen}
+        person={selected}
+        ministries={ministries}
+        onClose={() => {
+          setSelected(null);
+          setModalOpen(false);
+        }}
+        onSaved={load}
+      />
     </AppScreen>
   );
 }
+
+/* =========================
+   STYLES
+========================= */
 
 const styles = StyleSheet.create({
   container: { padding: 16 },
@@ -104,18 +152,34 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
   },
 
   name: { fontWeight: "800" },
   email: { fontSize: 13, color: "#6B7280" },
 
   leader: {
+    marginTop: 4,
     color: "#2563EB",
     fontWeight: "800",
   },
 
   member: {
+    marginTop: 4,
     color: "#6B7280",
     fontWeight: "700",
+  },
+
+  manage: {
+    backgroundColor: "#2563EB",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+
+  manageText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 12,
   },
 });

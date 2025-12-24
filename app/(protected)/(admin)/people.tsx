@@ -1,3 +1,4 @@
+import { PersonManageModal } from "@/src/components/admin/PersonManageModal";
 import { AppHeader } from "@/src/components/AppHeader";
 import { AppScreen } from "@/src/components/AppScreen";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -12,11 +13,10 @@ import {
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Modal,
   Pressable,
   StyleSheet,
   Text,
-  View,
+  View
 } from "react-native";
 
 /* =========================
@@ -386,108 +386,12 @@ export default function AdminPeople() {
           ))
         )}
       </View>
-
-      {/* MODAL (inalterado) */}
-      <Modal visible={modalOpen} transparent animationType="slide">
-        <View style={styles.overlay}>
-          <View style={styles.modal}>
-            <Text style={styles.modalName}>
-              {selected?.name}
-            </Text>
-            <Text style={styles.modalEmail}>
-              {selected?.email}
-            </Text>
-
-            <Pressable
-              style={[
-                styles.statusPill,
-                active ? styles.active : styles.inactive,
-              ]}
-              onPress={() => setActive((a) => !a)}
-            >
-              <Text style={styles.statusText}>
-                {active ? "Ativa" : "Inativa"}
-              </Text>
-            </Pressable>
-
-            <Text style={styles.sectionTitle}>
-              Ministérios
-            </Text>
-
-            {ministries.map((m) => {
-              const entry = selectedMinistries.find(
-                (x) => x.ministryId === m.id
-              );
-              const belongs = !!entry;
-
-              return (
-                <View key={m.id} style={styles.ministryRow}>
-                  <Pressable
-                    style={[
-                      styles.belongsBtn,
-                      belongs &&
-                      styles.belongsBtnActive,
-                    ]}
-                    onPress={() => toggleMinistry(m.id)}
-                  >
-                    <Text
-                      style={[
-                        styles.belongsIcon,
-                        !belongs && {
-                          color: "#111827",
-                        },
-                      ]}
-                    >
-                      {belongs ? "✓" : "+"}
-                    </Text>
-                  </Pressable>
-
-                  <Text style={styles.ministryName}>
-                    {m.name}
-                  </Text>
-
-                  {belongs && (
-                    <View style={styles.roleSwitch}>
-                      <RoleBtn
-                        label="Membro"
-                        active={entry.role === "member"}
-                        onPress={() =>
-                          updateRole(m.id, "member")
-                        }
-                      />
-                      <RoleBtn
-                        label="Líder"
-                        active={entry.role === "leader"}
-                        onPress={() =>
-                          updateRole(m.id, "leader")
-                        }
-                      />
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-
-            <View style={styles.footer}>
-              <Pressable
-                style={styles.cancel}
-                onPress={closeModal}
-              >
-                <Text>Cancelar</Text>
-              </Pressable>
-
-              <Pressable
-                style={styles.save}
-                onPress={handleSave}
-              >
-                <Text style={styles.saveText}>
-                  Salvar
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <PersonManageModal
+        visible={modalOpen}
+        person={selected}
+        ministries={ministries}
+        onClose={closeModal}
+        onSaved={load} />
     </AppScreen>
   );
 }
