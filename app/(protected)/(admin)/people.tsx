@@ -23,7 +23,7 @@ import {
    TYPES
 ========================= */
 
-type StatusFilter = "all" | "without" | "inactive";
+type StatusFilter = "active" | "all" | "without" | "inactive";
 
 type SelectedMinistry = {
   ministryId: string;
@@ -41,7 +41,7 @@ export default function AdminPeople() {
   const [ministries, setMinistries] = useState<Ministry[]>([]);
 
   const [statusFilter, setStatusFilter] =
-    useState<StatusFilter>("all");
+    useState<StatusFilter>("active");
   const [ministryFilter, setMinistryFilter] =
     useState<string | "all">("all");
 
@@ -57,42 +57,21 @@ export default function AdminPeople() {
   const [modalOpen, setModalOpen] = useState(false);
 
   /* =========================
-     DROPDOWN HELPERS
-  ========================= */
-
-  function toggleStatusDropdown() {
-    setStatusDropdownOpen((prev) => {
-      if (!prev) setMinistryDropdownOpen(false);
-      return !prev;
-    });
-  }
-
-  function toggleMinistryDropdown() {
-    setMinistryDropdownOpen((prev) => {
-      if (!prev) setStatusDropdownOpen(false);
-      return !prev;
-    });
-  }
-
-  function closeAllDropdowns() {
-    setStatusDropdownOpen(false);
-    setMinistryDropdownOpen(false);
-  }
-
-  /* =========================
      LOAD
   ========================= */
 
-  useEffect(() => {
-    (async () => {
-      const [p, m] = await Promise.all([
-        listPeople(),
-        listMinistries(),
-      ]);
+  async function load() {
+    const [p, m] = await Promise.all([
+      listPeople(),
+      listMinistries(),
+    ]);
 
-      setPeople(p);
-      setMinistries(m.filter((x) => x.active));
-    })();
+    setPeople(p);
+    setMinistries(m.filter((x) => x.active));
+  }
+
+  useEffect(() => {
+    load();
   }, []);
 
   /* =========================
@@ -101,6 +80,10 @@ export default function AdminPeople() {
 
   const filteredPeople = useMemo(() => {
     let result = [...people];
+
+    if (statusFilter === "active") {
+      result = result.filter((p) => p.active);
+    }
 
     if (statusFilter === "inactive") {
       result = result.filter((p) => !p.active);
@@ -118,8 +101,23 @@ export default function AdminPeople() {
       );
     }
 
+    result.sort((a, b) =>
+      a.name.localeCompare(b.name, "pt-BR", {
+        sensitivity: "base",
+      })
+    );
+
     return result;
   }, [people, statusFilter, ministryFilter]);
+
+  /* =========================
+     DROPDOWNS
+  ========================= */
+
+  function closeAllDropdowns() {
+    setStatusDropdownOpen(false);
+    setMinistryDropdownOpen(false);
+  }
 
   /* =========================
      MODAL
@@ -128,9 +126,9 @@ export default function AdminPeople() {
   function openManage(person: Person) {
     setSelected(person);
     setSelectedMinistries(
-      person.ministryIds.map((id) => ({
-        ministryId: id,
-        role: "member",
+      person.ministries.map((m) => ({
+        ministryId: m.ministryId,
+        role: m.role,
       }))
     );
     setActive(person.active);
@@ -155,8 +153,7 @@ export default function AdminPeople() {
       await togglePersonStatus(selected.id, active);
     }
 
-    const updated = await listPeople();
-    setPeople(updated);
+    await load();
     closeModal();
   }
 
@@ -202,81 +199,96 @@ export default function AdminPeople() {
       <View style={styles.container}>
         {/* FILTER ROW */}
         <View style={styles.filtersRow}>
-          {/* STATUS DROPDOWN */}
+          {/* STATUS */}
           <View style={styles.dropdownWrapper}>
             <Pressable
               style={styles.dropdown}
-              onPress={toggleStatusDropdown}
+              onPress={() => {
+                setStatusDropdownOpen((v) => !v);
+                setMinistryDropdownOpen(false);
+              }}
             >
               <Text style={styles.dropdownText}>
-                {statusFilter === "all"
-                  ? "Todas"
-                  : statusFilter === "without"
-                  ? "Sem ministério"
-                  : "Inativas"}
+                {statusFilter === "active"
+                  ? "Ativos"
+                  : statusFilter === "all"
+                    ? "Todos"
+                    : statusFilter === "without"
+                      ? "Sem ministério"
+                      : "Inativos"}
               </Text>
             </Pressable>
 
             {statusDropdownOpen && (
               <View style={styles.dropdownMenuLeft}>
-                <DropdownItem
-                  label="Todas"
-                  onPress={() => {
-                    setStatusFilter("all");
-                    closeAllDropdowns();
-                  }}
-                />
-                <DropdownItem
-                  label="Sem ministério"
-                  onPress={() => {
-                    setStatusFilter("without");
-                    closeAllDropdowns();
-                  }}
-                />
-                <DropdownItem
-                  label="Inativas"
-                  onPress={() => {
-                    setStatusFilter("inactive");
-                    closeAllDropdowns();
-                  }}
-                />
+                {["active", "all", "without", "inactive"].map(
+                  (v) => (
+                    <Pressable
+                      key={v}
+                      onPress={() => {
+                        setStatusFilter(v as StatusFilter);
+                        closeAllDropdowns();
+                      }}
+                    >
+                      <Text style={styles.dropdownItem}>
+                        {v === "active"
+                          ? "Ativos"
+                          : v === "all"
+                            ? "Todos"
+                            : v === "without"
+                              ? "Sem ministério"
+                              : "Inativos"}
+                      </Text>
+                    </Pressable>
+                  )
+                )}
               </View>
             )}
           </View>
 
-          {/* MINISTRY DROPDOWN */}
+          {/* MINISTRY */}
           <View style={styles.dropdownWrapper}>
             <Pressable
               style={styles.dropdown}
-              onPress={toggleMinistryDropdown}
+              onPress={() => {
+                setMinistryDropdownOpen((v) => !v);
+                setStatusDropdownOpen(false);
+              }}
             >
               <Text style={styles.dropdownText}>
                 {ministryFilter === "all"
                   ? "Todos ministérios"
                   : ministries.find(
-                      (m) => m.id === ministryFilter
-                    )?.name}
+                    (m) => m.id === ministryFilter
+                  )?.name}
               </Text>
             </Pressable>
 
             {ministryDropdownOpen && (
               <View style={styles.dropdownMenuRight}>
-                <DropdownItem
-                  label="Todos ministérios"
+                <Pressable
                   onPress={() => {
                     setMinistryFilter("all");
                     closeAllDropdowns();
                   }}
-                />
+                >
+                  <Text style={styles.dropdownItem}>
+                    Todos ministérios
+                  </Text>
+                </Pressable>
+
                 {ministries.map((m) => (
-                  <DropdownItem
+                  <Pressable
                     key={m.id}
-                    label={m.name}
                     onPress={() => {
                       setMinistryFilter(m.id);
                       closeAllDropdowns();
                     }}
-                  />
+                  >
+                    <Text style={styles.dropdownItem}>
+                      {m.name}
+                    </Text>
+                  </Pressable>
                 ))}
               </View>
             )}
@@ -290,22 +302,76 @@ export default function AdminPeople() {
           </Text>
         ) : (
           filteredPeople.map((p) => (
-            <View key={p.id} style={styles.card}>
+            <View
+              key={p.id}
+              style={[
+                styles.card,
+                !p.active && styles.cardInactive,
+              ]}
+            >
               <View>
                 <Text style={styles.name}>{p.name}</Text>
                 <Text style={styles.email}>{p.email}</Text>
 
-                <Text
-                  style={[
-                    styles.ministries,
-                    p.ministryIds.length === 0 &&
+                {p.ministries.length === 0 ? (
+                  <Text
+                    style={[
+                      styles.ministries,
                       styles.noMinistry,
-                  ]}
-                >
-                  {p.ministryIds.length === 0
-                    ? "⚠️ Sem ministério"
-                    : `Ministérios: ${p.ministryIds.length}`}
-                </Text>
+                    ]}
+                  >
+                    ⚠️ Sem ministério
+                  </Text>
+                ) : (
+                  <View style={styles.ministryList}>
+                    {[...p.ministries]
+                      .sort((a, b) => {
+                        if (a.role !== b.role) {
+                          return a.role === "leader" ? -1 : 1;
+                        }
+                        const nameA =
+                          ministries.find(
+                            (x) => x.id === a.ministryId
+                          )?.name ?? "";
+                        const nameB =
+                          ministries.find(
+                            (x) => x.id === b.ministryId
+                          )?.name ?? "";
+
+                        return nameA.localeCompare(
+                          nameB,
+                          "pt-BR",
+                          { sensitivity: "base" }
+                        );
+                      })
+                      .map((m) => {
+                        const ministry = ministries.find(
+                          (x) => x.id === m.ministryId
+                        );
+                        if (!ministry) return null;
+
+                        return (
+                          <Text
+                            key={m.ministryId}
+                            style={styles.ministryItem}
+                          >
+                            {ministry.name} —{" "}
+                            <Text
+                              style={
+                                m.role === "leader"
+                                  ? styles.roleLeader
+                                  : styles.roleMember
+                              }
+                            >
+                              {m.role === "leader"
+                                ? "Líder ⭐"
+                                : "Membro"}
+                            </Text>
+                          </Text>
+                        );
+                      })}
+                  </View>
+                )}
               </View>
 
               <Pressable
@@ -321,7 +387,7 @@ export default function AdminPeople() {
         )}
       </View>
 
-      {/* MODAL */}
+      {/* MODAL (inalterado) */}
       <Modal visible={modalOpen} transparent animationType="slide">
         <View style={styles.overlay}>
           <View style={styles.modal}>
@@ -352,7 +418,6 @@ export default function AdminPeople() {
               const entry = selectedMinistries.find(
                 (x) => x.ministryId === m.id
               );
-
               const belongs = !!entry;
 
               return (
@@ -360,14 +425,17 @@ export default function AdminPeople() {
                   <Pressable
                     style={[
                       styles.belongsBtn,
-                      belongs && styles.belongsBtnActive,
+                      belongs &&
+                      styles.belongsBtnActive,
                     ]}
                     onPress={() => toggleMinistry(m.id)}
                   >
                     <Text
                       style={[
                         styles.belongsIcon,
-                        !belongs && { color: "#111827" },
+                        !belongs && {
+                          color: "#111827",
+                        },
                       ]}
                     >
                       {belongs ? "✓" : "+"}
@@ -427,20 +495,6 @@ export default function AdminPeople() {
 /* =========================
    COMPONENTS
 ========================= */
-
-function DropdownItem({
-  label,
-  onPress,
-}: {
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable onPress={onPress}>
-      <Text style={styles.dropdownItem}>{label}</Text>
-    </Pressable>
-  );
-}
 
 function RoleBtn({
   label,
@@ -516,7 +570,6 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     minWidth: 180,
     zIndex: 30,
-    elevation: 6,
   },
 
   dropdownMenuRight: {
@@ -529,7 +582,6 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     minWidth: 200,
     zIndex: 30,
-    elevation: 6,
   },
 
   dropdownItem: {
@@ -549,6 +601,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
+  cardInactive: {
+    opacity: 0.45,
+  },
+
   name: { fontWeight: "800" },
   email: { fontSize: 13, color: "#6B7280" },
 
@@ -559,7 +615,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#2563EB",
     padding: 10,
     borderRadius: 12,
+    justifyContent: "center",
   },
+
   manageText: { color: "#fff", fontWeight: "800" },
 
   overlay: {
@@ -575,6 +633,7 @@ const styles = StyleSheet.create({
   },
 
   modalName: { fontSize: 18, fontWeight: "800" },
+
   modalEmail: {
     fontSize: 13,
     color: "#6B7280",
@@ -587,8 +646,10 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     marginBottom: 12,
   },
+
   active: { backgroundColor: "#DCFCE7" },
   inactive: { backgroundColor: "#FEE2E2" },
+
   statusText: { fontWeight: "700" },
 
   sectionTitle: { fontWeight: "700", marginBottom: 8 },
@@ -649,6 +710,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
+    alignItems: "center",
   },
 
   save: {
@@ -656,7 +718,29 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     backgroundColor: "#2563EB",
+    alignItems: "center",
   },
 
   saveText: { color: "#fff", fontWeight: "800" },
+
+  ministryList: {
+    marginTop: 6,
+    gap: 2,
+  },
+
+  ministryItem: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#111827",
+  },
+
+  roleLeader: {
+    color: "#2563EB",
+    fontWeight: "800",
+  },
+
+  roleMember: {
+    color: "#6B7280",
+    fontWeight: "700",
+  },
 });

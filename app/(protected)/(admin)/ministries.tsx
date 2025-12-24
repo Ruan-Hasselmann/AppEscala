@@ -160,7 +160,7 @@ export default function AdminMinistries() {
         )}
 
         <Pressable style={styles.addBtn} onPress={openCreate}>
-          <Text style={styles.addText}>+ Novo Ministério</Text>
+          <Text style={styles.addText}>Novo Ministério</Text>
         </Pressable>
       </View>
 
