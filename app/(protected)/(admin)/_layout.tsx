@@ -54,7 +54,7 @@ export default function AdminLayout() {
 
             {/* CULTOS / SERVICE DAYS */}
             <Tabs.Screen
-                name="ministries"
+                name="ministries/ministries"
                 options={{
                     title: "Ministérios ",
                     tabBarIcon: ({ color, size }) => (
@@ -73,6 +73,14 @@ export default function AdminLayout() {
                     ),
                 }}
             />
+
+            <Tabs.Screen
+                name="ministries/[ministryId]"
+                options={{
+                    href: null, // 👈 ESCONDE DO TABS
+                }}
+            />
+
         </Tabs>
     );
 }

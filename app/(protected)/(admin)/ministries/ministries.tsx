@@ -7,7 +7,8 @@ import {
   Ministry,
   updateMinistry,
 } from "@/src/services/ministries";
-import { useFocusEffect } from "expo-router";
+import { listPeople, Person } from "@/src/services/people";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -17,30 +18,71 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
 } from "react-native";
 
 /* =========================
    SCREEN
 ========================= */
 
+type MinistryStats = {
+  members: number;
+  leaders: number;
+};
+
 export default function AdminMinistries() {
   const { user, logout } = useAuth();
 
   const [ministries, setMinistries] = useState<Ministry[]>([]);
-  const [selected, setSelected] = useState<Ministry | null>(null);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [stats, setStats] = useState<Record<string, MinistryStats>>(
+    {}
+  );
 
+  const [selected, setSelected] = useState<Ministry | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const router = useRouter();
 
   /* =========================
      LOAD
   ========================= */
 
   async function load() {
-    const list = await listMinistries();
-    setMinistries(list);
+    const [m, p] = await Promise.all([
+      listMinistries(),
+      listPeople(),
+    ]);
+
+    // 🔤 ordenação alfabética
+    m.sort((a, b) =>
+      a.name.localeCompare(b.name, "pt-BR", {
+        sensitivity: "base",
+      })
+    );
+
+    setMinistries(m);
+    setPeople(p);
+
+    // 📊 calcula estatísticas
+    const map: Record<string, MinistryStats> = {};
+
+    p.forEach((person) => {
+      person.ministries.forEach((entry) => {
+        if (!map[entry.ministryId]) {
+          map[entry.ministryId] = { members: 0, leaders: 0 };
+        }
+
+        map[entry.ministryId].members += 1;
+
+        if (entry.role === "leader") {
+          map[entry.ministryId].leaders += 1;
+        }
+      });
+    });
+
+    setStats(map);
   }
 
   useFocusEffect(
@@ -119,44 +161,73 @@ export default function AdminMinistries() {
             Nenhum ministério cadastrado
           </Text>
         ) : (
-          ministries.map((m) => (
-            <View key={m.id} style={styles.card}>
-              <View>
-                <Text style={styles.name}>{m.name}</Text>
-                {m.description ? (
-                  <Text style={styles.desc}>
-                    {m.description}
+          ministries.map((m) => {
+            const s = stats[m.id] ?? {
+              members: 0,
+              leaders: 0,
+            };
+
+            return (
+              <Pressable
+                key={m.id}
+                style={({ pressed }) => [
+                  styles.card,
+                  !m.active && styles.cardInactive,
+                  pressed && { opacity: 0.85 },
+                ]}
+                onPress={() =>
+                  router.push({
+                    pathname: "/(protected)/(admin)/ministries/[ministryId]",
+                    params: {ministryId: m.id},
+                  })
+                }
+              >
+                <View>
+                  <Text style={styles.name}>{m.name}</Text>
+
+                  {m.description ? (
+                    <Text style={styles.desc}>
+                      {m.description}
+                    </Text>
+                  ) : null}
+
+                  <Text style={styles.stats}>
+                    👥 {s.members} membros · ⭐ {s.leaders} líderes
                   </Text>
-                ) : null}
-              </View>
+                </View>
 
-              <View style={styles.actions}>
-                <Pressable
-                  style={styles.edit}
-                  onPress={() => openEdit(m)}
-                >
-                  <Text style={styles.editText}>Editar</Text>
-                </Pressable>
-
-                <Pressable
-                  style={[
-                    styles.status,
-                    !m.active && styles.statusInactive,
-                  ]}
-                  onPress={() => toggleStatus(m)}
-                >
-                  <Text
-                    style={[
-                      styles.statusText,
-                      !m.active && styles.statusTextInactive,
-                    ]}
+                <View style={styles.actions}>
+                  <Pressable
+                    style={styles.edit}
+                    onPress={() => openEdit(m)}
                   >
-                    {m.active ? "Ativo" : "Inativo"}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          ))
+                    <Text style={styles.editText}>
+                      Editar
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={[
+                      styles.status,
+                      !m.active &&
+                      styles.statusInactive,
+                    ]}
+                    onPress={() => toggleStatus(m)}
+                  >
+                    <Text
+                      style={[
+                        styles.statusText,
+                        !m.active &&
+                        styles.statusTextInactive,
+                      ]}
+                    >
+                      {m.active ? "Ativo" : "Inativo"}
+                    </Text>
+                  </Pressable>
+                </View>
+              </Pressable>
+            );
+          })
         )}
 
         <Pressable style={styles.addBtn} onPress={openCreate}>
@@ -189,7 +260,6 @@ export default function AdminMinistries() {
                 placeholder="Nome do ministério"
                 placeholderTextColor="#6B7280"
                 autoCapitalize="words"
-                autoCorrect={true}
                 style={styles.input}
               />
 
@@ -199,7 +269,6 @@ export default function AdminMinistries() {
                 placeholder="Descrição (opcional)"
                 placeholderTextColor="#6B7280"
                 style={[styles.input, styles.textarea]}
-                autoCapitalize="words"
                 multiline
               />
 
@@ -221,7 +290,9 @@ export default function AdminMinistries() {
                   disabled={!name.trim()}
                   onPress={handleSave}
                 >
-                  <Text style={styles.saveText}>Salvar</Text>
+                  <Text style={styles.saveText}>
+                    Salvar
+                  </Text>
                 </Pressable>
               </View>
             </View>
@@ -237,9 +308,7 @@ export default function AdminMinistries() {
 ========================= */
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-  },
+  container: { padding: 16 },
 
   empty: {
     textAlign: "center",
@@ -256,6 +325,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
+  cardInactive: {
+    opacity: 0.45,
+  },
+
   name: {
     fontSize: 16,
     fontWeight: "800",
@@ -266,6 +339,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 13,
     color: "#6B7280",
+  },
+
+  stats: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#374151",
   },
 
   actions: {
@@ -328,8 +408,6 @@ const styles = StyleSheet.create({
   modal: {
     backgroundColor: "#FFFFFF",
     padding: 20,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
     borderRadius: 20,
   },
 
@@ -348,9 +426,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  textarea: {
-    minHeight: 70,
-  },
+  textarea: { minHeight: 70 },
 
   footer: {
     flexDirection: "row",
