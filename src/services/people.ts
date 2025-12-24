@@ -19,11 +19,14 @@ export type PersonMinistry = {
   role: "leader" | "member";
 };
 
+export type PersonRole = "admin" | "leader" | "member";
+
 export type Person = {
   id: string;
   name: string;
   email: string;
   active: boolean;
+  role: PersonRole;
 
   // NOVO
   ministries: PersonMinistry[];
@@ -55,6 +58,7 @@ function mapDoc(docSnap: any): Person {
     name: data.name,
     email: data.email,
     active: data.active,
+    role: data.role,
     ministries,
     ministryIds: ministries.map((m: { ministryId: any; }) => m.ministryId),
     createdAt: data.createdAt?.toDate(),
@@ -132,6 +136,17 @@ export async function updatePersonMinistries(
   });
 }
 
+export async function updatePersonRole(
+  personId: string,
+  role: PersonRole
+): Promise<void> {
+  const ref = doc(db, "people", personId);
+
+  await updateDoc(ref, {
+    role,
+    updatedAt: serverTimestamp(),
+  });
+}
 
 /**
  * Ativa / desativa pessoa
