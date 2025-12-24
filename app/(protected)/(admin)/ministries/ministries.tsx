@@ -15,6 +15,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -154,151 +155,151 @@ export default function AdminMinistries() {
         subtitle={`${user?.name} · Administrador`}
         onLogout={logout}
       />
+      <ScrollView>
+        <View style={styles.container}>
+          <Pressable style={styles.addBtn} onPress={openCreate}>
+            <Text style={styles.addText}>Novo Ministério</Text>
+          </Pressable>
+          {ministries.length === 0 ? (
+            <Text style={styles.empty}>
+              Nenhum ministério cadastrado
+            </Text>
+          ) : (
+            ministries.map((m) => {
+              const s = stats[m.id] ?? {
+                members: 0,
+                leaders: 0,
+              };
 
-      <View style={styles.container}>
-        {ministries.length === 0 ? (
-          <Text style={styles.empty}>
-            Nenhum ministério cadastrado
-          </Text>
-        ) : (
-          ministries.map((m) => {
-            const s = stats[m.id] ?? {
-              members: 0,
-              leaders: 0,
-            };
+              return (
+                <Pressable
+                  key={m.id}
+                  style={({ pressed }) => [
+                    styles.card,
+                    !m.active && styles.cardInactive,
+                    pressed && { opacity: 0.85 },
+                  ]}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(protected)/(admin)/ministries/[ministryId]",
+                      params: { ministryId: m.id },
+                    })
+                  }
+                >
+                  <View>
+                    <Text style={styles.name}>{m.name}</Text>
 
-            return (
-              <Pressable
-                key={m.id}
-                style={({ pressed }) => [
-                  styles.card,
-                  !m.active && styles.cardInactive,
-                  pressed && { opacity: 0.85 },
-                ]}
-                onPress={() =>
-                  router.push({
-                    pathname: "/(protected)/(admin)/ministries/[ministryId]",
-                    params: {ministryId: m.id},
-                  })
-                }
-              >
-                <View>
-                  <Text style={styles.name}>{m.name}</Text>
+                    {m.description ? (
+                      <Text style={styles.desc}>
+                        {m.description}
+                      </Text>
+                    ) : null}
 
-                  {m.description ? (
-                    <Text style={styles.desc}>
-                      {m.description}
+                    <Text style={styles.stats}>
+                      👥 {s.members} membros · ⭐ {s.leaders} líderes
                     </Text>
-                  ) : null}
+                  </View>
 
-                  <Text style={styles.stats}>
-                    👥 {s.members} membros · ⭐ {s.leaders} líderes
-                  </Text>
-                </View>
+                  <View style={styles.actions}>
+                    <Pressable
+                      style={styles.edit}
+                      onPress={() => openEdit(m)}
+                    >
+                      <Text style={styles.editText}>
+                        Editar
+                      </Text>
+                    </Pressable>
 
-                <View style={styles.actions}>
+                    <Pressable
+                      style={[
+                        styles.status,
+                        !m.active &&
+                        styles.statusInactive,
+                      ]}
+                      onPress={() => toggleStatus(m)}
+                    >
+                      <Text
+                        style={[
+                          styles.statusText,
+                          !m.active &&
+                          styles.statusTextInactive,
+                        ]}
+                      >
+                        {m.active ? "Ativo" : "Inativo"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </Pressable>
+              );
+            })
+          )}
+        </View>
+
+        {/* MODAL */}
+        <Modal
+          visible={isModalOpen}
+          transparent
+          animationType="slide"
+          onRequestClose={closeModal}
+        >
+          <View style={styles.overlay}>
+            <KeyboardAvoidingView
+              style={styles.container}
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+            >
+              <View style={styles.modal}>
+                <Text style={styles.modalTitle}>
+                  {selected
+                    ? "Editar Ministério"
+                    : "Novo Ministério"}
+                </Text>
+
+                <TextInput
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Nome do ministério"
+                  placeholderTextColor="#6B7280"
+                  autoCapitalize="words"
+                  style={styles.input}
+                />
+
+                <TextInput
+                  value={description}
+                  onChangeText={setDescription}
+                  placeholder="Descrição (opcional)"
+                  placeholderTextColor="#6B7280"
+                  style={[styles.input, styles.textarea]}
+                  multiline
+                />
+
+                <View style={styles.footer}>
                   <Pressable
-                    style={styles.edit}
-                    onPress={() => openEdit(m)}
+                    style={styles.cancel}
+                    onPress={closeModal}
                   >
-                    <Text style={styles.editText}>
-                      Editar
+                    <Text style={styles.cancelText}>
+                      Cancelar
                     </Text>
                   </Pressable>
 
                   <Pressable
                     style={[
-                      styles.status,
-                      !m.active &&
-                      styles.statusInactive,
+                      styles.save,
+                      !name.trim() && { opacity: 0.5 },
                     ]}
-                    onPress={() => toggleStatus(m)}
+                    disabled={!name.trim()}
+                    onPress={handleSave}
                   >
-                    <Text
-                      style={[
-                        styles.statusText,
-                        !m.active &&
-                        styles.statusTextInactive,
-                      ]}
-                    >
-                      {m.active ? "Ativo" : "Inativo"}
+                    <Text style={styles.saveText}>
+                      Salvar
                     </Text>
                   </Pressable>
                 </View>
-              </Pressable>
-            );
-          })
-        )}
-
-        <Pressable style={styles.addBtn} onPress={openCreate}>
-          <Text style={styles.addText}>Novo Ministério</Text>
-        </Pressable>
-      </View>
-
-      {/* MODAL */}
-      <Modal
-        visible={isModalOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={closeModal}
-      >
-        <View style={styles.overlay}>
-          <KeyboardAvoidingView
-            style={styles.container}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-          >
-            <View style={styles.modal}>
-              <Text style={styles.modalTitle}>
-                {selected
-                  ? "Editar Ministério"
-                  : "Novo Ministério"}
-              </Text>
-
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                placeholder="Nome do ministério"
-                placeholderTextColor="#6B7280"
-                autoCapitalize="words"
-                style={styles.input}
-              />
-
-              <TextInput
-                value={description}
-                onChangeText={setDescription}
-                placeholder="Descrição (opcional)"
-                placeholderTextColor="#6B7280"
-                style={[styles.input, styles.textarea]}
-                multiline
-              />
-
-              <View style={styles.footer}>
-                <Pressable
-                  style={styles.cancel}
-                  onPress={closeModal}
-                >
-                  <Text style={styles.cancelText}>
-                    Cancelar
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={[
-                    styles.save,
-                    !name.trim() && { opacity: 0.5 },
-                  ]}
-                  disabled={!name.trim()}
-                  onPress={handleSave}
-                >
-                  <Text style={styles.saveText}>
-                    Salvar
-                  </Text>
-                </Pressable>
               </View>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+            </KeyboardAvoidingView>
+          </View>
+        </Modal>
+      </ScrollView>
     </AppScreen>
   );
 }

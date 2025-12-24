@@ -9,7 +9,7 @@ import { PersonManageModal } from "@/src/components/admin/PersonManageModal";
 
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 export default function AdminMinistryMembers() {
   const { ministryId } = useLocalSearchParams<{ ministryId: string }>();
@@ -71,65 +71,66 @@ export default function AdminMinistryMembers() {
         subtitle={`${user?.name} · Administrador`}
         onLogout={logout}
       />
+      <ScrollView>
+        <View style={styles.container}>
+          {people.length === 0 ? (
+            <Text style={styles.empty}>
+              Nenhuma pessoa neste ministério
+            </Text>
+          ) : (
+            people.map((p) => {
+              const entry = p.ministries.find(
+                (x) => x.ministryId === ministryId
+              );
 
-      <View style={styles.container}>
-        {people.length === 0 ? (
-          <Text style={styles.empty}>
-            Nenhuma pessoa neste ministério
-          </Text>
-        ) : (
-          people.map((p) => {
-            const entry = p.ministries.find(
-              (x) => x.ministryId === ministryId
-            );
+              return (
+                <View key={p.id} style={styles.card}>
+                  <View>
+                    <Text style={styles.name}>{p.name}</Text>
+                    <Text style={styles.email}>{p.email}</Text>
 
-            return (
-              <View key={p.id} style={styles.card}>
-                <View>
-                  <Text style={styles.name}>{p.name}</Text>
-                  <Text style={styles.email}>{p.email}</Text>
+                    <Text
+                      style={
+                        entry?.role === "leader"
+                          ? styles.leader
+                          : styles.member
+                      }
+                    >
+                      {entry?.role === "leader"
+                        ? "⭐ Líder"
+                        : "Membro"}
+                    </Text>
+                  </View>
 
-                  <Text
-                    style={
-                      entry?.role === "leader"
-                        ? styles.leader
-                        : styles.member
-                    }
+                  <Pressable
+                    style={styles.manage}
+                    onPress={() => {
+                      setSelected(p);
+                      setModalOpen(true);
+                    }}
                   >
-                    {entry?.role === "leader"
-                      ? "⭐ Líder"
-                      : "Membro"}
-                  </Text>
+                    <Text style={styles.manageText}>
+                      Gerenciar
+                    </Text>
+                  </Pressable>
                 </View>
+              );
+            })
+          )}
+        </View>
 
-                <Pressable
-                  style={styles.manage}
-                  onPress={() => {
-                    setSelected(p);
-                    setModalOpen(true);
-                  }}
-                >
-                  <Text style={styles.manageText}>
-                    Gerenciar
-                  </Text>
-                </Pressable>
-              </View>
-            );
-          })
-        )}
-      </View>
-
-      {/* MODAL DE EDIÇÃO (REAPROVEITADO) */}
-      <PersonManageModal
-        visible={modalOpen}
-        person={selected}
-        ministries={ministries}
-        onClose={() => {
-          setSelected(null);
-          setModalOpen(false);
-        }}
-        onSaved={load}
-      />
+        {/* MODAL DE EDIÇÃO (REAPROVEITADO) */}
+        <PersonManageModal
+          visible={modalOpen}
+          person={selected}
+          ministries={ministries}
+          onClose={() => {
+            setSelected(null);
+            setModalOpen(false);
+          }}
+          onSaved={load}
+        />
+      </ScrollView>
     </AppScreen>
   );
 }

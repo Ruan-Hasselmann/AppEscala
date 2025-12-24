@@ -7,7 +7,7 @@ import { getServiceDaysByMonth, ServiceDay } from "@/src/services/serviceDays";
 import { getServicesByServiceDay } from "@/src/services/services";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { Dimensions, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Dimensions, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 async function mapToCalendarData(
   serviceDays: ServiceDay[]
@@ -59,54 +59,55 @@ export default function AdminDashboard() {
         subtitle={`${user?.name} · Administrador`}
         onLogout={logout}
       />
-
-      <View style={{ padding: 16 }}>
-        {/* HEADER DE MÊS */}
-        <View style={styles.monthHeader}>
-          <Pressable
-            onPress={() =>
-              setMonth(
-                new Date(
-                  month.getFullYear(),
-                  month.getMonth() - 1,
-                  1
+      <ScrollView>
+        <View style={{ padding: 16 }}>
+          {/* HEADER DE MÊS */}
+          <View style={styles.monthHeader}>
+            <Pressable
+              onPress={() =>
+                setMonth(
+                  new Date(
+                    month.getFullYear(),
+                    month.getMonth() - 1,
+                    1
+                  )
                 )
-              )
-            }
-          >
-            <Text style={styles.nav}>◀</Text>
-          </Pressable>
+              }
+            >
+              <Text style={styles.nav}>◀</Text>
+            </Pressable>
 
-          <Text style={styles.monthTitle}>
-            {month.toLocaleDateString("pt-BR", {
-              month: "long",
-              year: "numeric",
-            })}
-          </Text>
+            <Text style={styles.monthTitle}>
+              {month.toLocaleDateString("pt-BR", {
+                month: "long",
+                year: "numeric",
+              })}
+            </Text>
 
-          <Pressable
-            onPress={() =>
-              setMonth(
-                new Date(
-                  month.getFullYear(),
-                  month.getMonth() + 1,
-                  1
+            <Pressable
+              onPress={() =>
+                setMonth(
+                  new Date(
+                    month.getFullYear(),
+                    month.getMonth() + 1,
+                    1
+                  )
                 )
-              )
-            }
-          >
-            <Text style={styles.nav}>▶</Text>
-          </Pressable>
-        </View>
+              }
+            >
+              <Text style={styles.nav}>▶</Text>
+            </Pressable>
+          </View>
 
-        {/* CALENDÁRIO */}
-        <View style={styles.calendarWrapper}>
-          <CalendarDashboard
-            month={month}
-            data={calendarData}
-          />
+          {/* CALENDÁRIO */}
+          <View style={styles.calendarWrapper}>
+            <CalendarDashboard
+              month={month}
+              data={calendarData}
+            />
+          </View>
         </View>
-      </View>
+      </ScrollView>
     </AppScreen>
   );
 }

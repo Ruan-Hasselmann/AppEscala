@@ -15,6 +15,7 @@ import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View
@@ -190,211 +191,212 @@ export default function AdminPeople() {
         subtitle={`${user?.name} · Administrador`}
         onLogout={logout}
       />
+      <ScrollView>
+        {/* OVERLAY PARA FECHAR DROPDOWNS */}
+        {(statusDropdownOpen || ministryDropdownOpen) && (
+          <Pressable
+            style={styles.dropdownOverlay}
+            onPress={closeAllDropdowns}
+          />
+        )}
 
-      {/* OVERLAY PARA FECHAR DROPDOWNS */}
-      {(statusDropdownOpen || ministryDropdownOpen) && (
-        <Pressable
-          style={styles.dropdownOverlay}
-          onPress={closeAllDropdowns}
-        />
-      )}
+        <View style={styles.container}>
+          {/* FILTER ROW */}
+          <View style={styles.filtersRow}>
+            {/* STATUS */}
+            <View style={styles.dropdownWrapper}>
+              <Pressable
+                style={styles.dropdown}
+                onPress={() => {
+                  setStatusDropdownOpen((v) => !v);
+                  setMinistryDropdownOpen(false);
+                }}
+              >
+                <Text style={styles.dropdownText}>
+                  {statusFilter === "active"
+                    ? "Ativos"
+                    : statusFilter === "all"
+                      ? "Todos"
+                      : statusFilter === "without"
+                        ? "Sem ministério"
+                        : "Inativos"}
+                </Text>
+              </Pressable>
 
-      <View style={styles.container}>
-        {/* FILTER ROW */}
-        <View style={styles.filtersRow}>
-          {/* STATUS */}
-          <View style={styles.dropdownWrapper}>
-            <Pressable
-              style={styles.dropdown}
-              onPress={() => {
-                setStatusDropdownOpen((v) => !v);
-                setMinistryDropdownOpen(false);
-              }}
-            >
-              <Text style={styles.dropdownText}>
-                {statusFilter === "active"
-                  ? "Ativos"
-                  : statusFilter === "all"
-                    ? "Todos"
-                    : statusFilter === "without"
-                      ? "Sem ministério"
-                      : "Inativos"}
-              </Text>
-            </Pressable>
+              {statusDropdownOpen && (
+                <View style={styles.dropdownMenuLeft}>
+                  {["active", "all", "without", "inactive"].map(
+                    (v) => (
+                      <Pressable
+                        key={v}
+                        onPress={() => {
+                          setStatusFilter(v as StatusFilter);
+                          closeAllDropdowns();
+                        }}
+                      >
+                        <Text style={styles.dropdownItem}>
+                          {v === "active"
+                            ? "Ativos"
+                            : v === "all"
+                              ? "Todos"
+                              : v === "without"
+                                ? "Sem ministério"
+                                : "Inativos"}
+                        </Text>
+                      </Pressable>
+                    )
+                  )}
+                </View>
+              )}
+            </View>
 
-            {statusDropdownOpen && (
-              <View style={styles.dropdownMenuLeft}>
-                {["active", "all", "without", "inactive"].map(
-                  (v) => (
-                    <Pressable
-                      key={v}
-                      onPress={() => {
-                        setStatusFilter(v as StatusFilter);
-                        closeAllDropdowns();
-                      }}
-                    >
-                      <Text style={styles.dropdownItem}>
-                        {v === "active"
-                          ? "Ativos"
-                          : v === "all"
-                            ? "Todos"
-                            : v === "without"
-                              ? "Sem ministério"
-                              : "Inativos"}
-                      </Text>
-                    </Pressable>
-                  )
-                )}
-              </View>
-            )}
-          </View>
+            {/* MINISTRY */}
+            <View style={styles.dropdownWrapper}>
+              <Pressable
+                style={styles.dropdown}
+                onPress={() => {
+                  setMinistryDropdownOpen((v) => !v);
+                  setStatusDropdownOpen(false);
+                }}
+              >
+                <Text style={styles.dropdownText}>
+                  {ministryFilter === "all"
+                    ? "Todos ministérios"
+                    : ministries.find(
+                      (m) => m.id === ministryFilter
+                    )?.name}
+                </Text>
+              </Pressable>
 
-          {/* MINISTRY */}
-          <View style={styles.dropdownWrapper}>
-            <Pressable
-              style={styles.dropdown}
-              onPress={() => {
-                setMinistryDropdownOpen((v) => !v);
-                setStatusDropdownOpen(false);
-              }}
-            >
-              <Text style={styles.dropdownText}>
-                {ministryFilter === "all"
-                  ? "Todos ministérios"
-                  : ministries.find(
-                    (m) => m.id === ministryFilter
-                  )?.name}
-              </Text>
-            </Pressable>
-
-            {ministryDropdownOpen && (
-              <View style={styles.dropdownMenuRight}>
-                <Pressable
-                  onPress={() => {
-                    setMinistryFilter("all");
-                    closeAllDropdowns();
-                  }}
-                >
-                  <Text style={styles.dropdownItem}>
-                    Todos ministérios
-                  </Text>
-                </Pressable>
-
-                {ministries.map((m) => (
+              {ministryDropdownOpen && (
+                <View style={styles.dropdownMenuRight}>
                   <Pressable
-                    key={m.id}
                     onPress={() => {
-                      setMinistryFilter(m.id);
+                      setMinistryFilter("all");
                       closeAllDropdowns();
                     }}
                   >
                     <Text style={styles.dropdownItem}>
-                      {m.name}
+                      Todos ministérios
                     </Text>
                   </Pressable>
-                ))}
-              </View>
-            )}
-          </View>
-        </View>
 
-        {/* LIST */}
-        {filteredPeople.length === 0 ? (
-          <Text style={styles.empty}>
-            Nenhuma pessoa encontrada
-          </Text>
-        ) : (
-          filteredPeople.map((p) => (
-            <View
-              key={p.id}
-              style={[
-                styles.card,
-                !p.active && styles.cardInactive,
-              ]}
-            >
-              <View>
-                <Text style={styles.name}>{p.name}</Text>
-                <Text style={styles.email}>{p.email}</Text>
-
-                {p.ministries.length === 0 ? (
-                  <Text
-                    style={[
-                      styles.ministries,
-                      styles.noMinistry,
-                    ]}
-                  >
-                    ⚠️ Sem ministério
-                  </Text>
-                ) : (
-                  <View style={styles.ministryList}>
-                    {[...p.ministries]
-                      .sort((a, b) => {
-                        if (a.role !== b.role) {
-                          return a.role === "leader" ? -1 : 1;
-                        }
-                        const nameA =
-                          ministries.find(
-                            (x) => x.id === a.ministryId
-                          )?.name ?? "";
-                        const nameB =
-                          ministries.find(
-                            (x) => x.id === b.ministryId
-                          )?.name ?? "";
-
-                        return nameA.localeCompare(
-                          nameB,
-                          "pt-BR",
-                          { sensitivity: "base" }
-                        );
-                      })
-                      .map((m) => {
-                        const ministry = ministries.find(
-                          (x) => x.id === m.ministryId
-                        );
-                        if (!ministry) return null;
-
-                        return (
-                          <Text
-                            key={m.ministryId}
-                            style={styles.ministryItem}
-                          >
-                            {ministry.name} —{" "}
-                            <Text
-                              style={
-                                m.role === "leader"
-                                  ? styles.roleLeader
-                                  : styles.roleMember
-                              }
-                            >
-                              {m.role === "leader"
-                                ? "Líder ⭐"
-                                : "Membro"}
-                            </Text>
-                          </Text>
-                        );
-                      })}
-                  </View>
-                )}
-              </View>
-
-              <Pressable
-                style={styles.manage}
-                onPress={() => openManage(p)}
-              >
-                <Text style={styles.manageText}>
-                  Gerenciar
-                </Text>
-              </Pressable>
+                  {ministries.map((m) => (
+                    <Pressable
+                      key={m.id}
+                      onPress={() => {
+                        setMinistryFilter(m.id);
+                        closeAllDropdowns();
+                      }}
+                    >
+                      <Text style={styles.dropdownItem}>
+                        {m.name}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
             </View>
-          ))
-        )}
-      </View>
-      <PersonManageModal
-        visible={modalOpen}
-        person={selected}
-        ministries={ministries}
-        onClose={closeModal}
-        onSaved={load} />
+          </View>
+
+          {/* LIST */}
+          {filteredPeople.length === 0 ? (
+            <Text style={styles.empty}>
+              Nenhuma pessoa encontrada
+            </Text>
+          ) : (
+            filteredPeople.map((p) => (
+              <View
+                key={p.id}
+                style={[
+                  styles.card,
+                  !p.active && styles.cardInactive,
+                ]}
+              >
+                <View>
+                  <Text style={styles.name}>{p.name}</Text>
+                  <Text style={styles.email}>{p.email}</Text>
+
+                  {p.ministries.length === 0 ? (
+                    <Text
+                      style={[
+                        styles.ministries,
+                        styles.noMinistry,
+                      ]}
+                    >
+                      ⚠️ Sem ministério
+                    </Text>
+                  ) : (
+                    <View style={styles.ministryList}>
+                      {[...p.ministries]
+                        .sort((a, b) => {
+                          if (a.role !== b.role) {
+                            return a.role === "leader" ? -1 : 1;
+                          }
+                          const nameA =
+                            ministries.find(
+                              (x) => x.id === a.ministryId
+                            )?.name ?? "";
+                          const nameB =
+                            ministries.find(
+                              (x) => x.id === b.ministryId
+                            )?.name ?? "";
+
+                          return nameA.localeCompare(
+                            nameB,
+                            "pt-BR",
+                            { sensitivity: "base" }
+                          );
+                        })
+                        .map((m) => {
+                          const ministry = ministries.find(
+                            (x) => x.id === m.ministryId
+                          );
+                          if (!ministry) return null;
+
+                          return (
+                            <Text
+                              key={m.ministryId}
+                              style={styles.ministryItem}
+                            >
+                              {ministry.name} —{" "}
+                              <Text
+                                style={
+                                  m.role === "leader"
+                                    ? styles.roleLeader
+                                    : styles.roleMember
+                                }
+                              >
+                                {m.role === "leader"
+                                  ? "Líder ⭐"
+                                  : "Membro"}
+                              </Text>
+                            </Text>
+                          );
+                        })}
+                    </View>
+                  )}
+                </View>
+
+                <Pressable
+                  style={styles.manage}
+                  onPress={() => openManage(p)}
+                >
+                  <Text style={styles.manageText}>
+                    Gerenciar
+                  </Text>
+                </Pressable>
+              </View>
+            ))
+          )}
+        </View>
+        <PersonManageModal
+          visible={modalOpen}
+          person={selected}
+          ministries={ministries}
+          onClose={closeModal}
+          onSaved={load} />
+      </ScrollView>
     </AppScreen>
   );
 }

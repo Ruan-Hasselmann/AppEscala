@@ -27,6 +27,7 @@ import {
     Modal,
     Platform,
     Pressable,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -255,260 +256,261 @@ export default function AdminServiceDays() {
                 subtitle={`${user?.name} · Administrador`}
                 onLogout={logout}
             />
-
-            <View style={styles.container}>
-                <View style={styles.monthHeader}>
-                    <Pressable
-                        onPress={() =>
-                            setMonth(
-                                new Date(
-                                    month.getFullYear(),
-                                    month.getMonth() - 1,
-                                    1
+            <ScrollView>
+                <View style={styles.container}>
+                    <View style={styles.monthHeader}>
+                        <Pressable
+                            onPress={() =>
+                                setMonth(
+                                    new Date(
+                                        month.getFullYear(),
+                                        month.getMonth() - 1,
+                                        1
+                                    )
                                 )
-                            )
-                        }
-                    >
-                        <Text style={styles.nav}>◀</Text>
-                    </Pressable>
+                            }
+                        >
+                            <Text style={styles.nav}>◀</Text>
+                        </Pressable>
 
-                    <Text style={styles.monthTitle}>
-                        {month.toLocaleDateString("pt-BR", {
-                            month: "long",
-                            year: "numeric",
-                        })}
-                    </Text>
+                        <Text style={styles.monthTitle}>
+                            {month.toLocaleDateString("pt-BR", {
+                                month: "long",
+                                year: "numeric",
+                            })}
+                        </Text>
 
-                    <Pressable
-                        onPress={() =>
-                            setMonth(
-                                new Date(
-                                    month.getFullYear(),
-                                    month.getMonth() + 1,
-                                    1
+                        <Pressable
+                            onPress={() =>
+                                setMonth(
+                                    new Date(
+                                        month.getFullYear(),
+                                        month.getMonth() + 1,
+                                        1
+                                    )
                                 )
-                            )
-                        }
-                    >
-                        <Text style={styles.nav}>▶</Text>
+                            }
+                        >
+                            <Text style={styles.nav}>▶</Text>
+                        </Pressable>
+                    </View>
+                    <View style={styles.calendarWrapper}>
+                        <CalendarDashboard
+                            month={month}
+                            data={mapServiceDaysToCalendar(serviceDays)}
+                            onDayPress={(day) => onDayPress(day.date)}
+                        />
+
+                    </View>
+                    <Pressable style={styles.addBtn} onPress={handleDuplicateMonth}>
+                        <Text style={{ fontWeight: "700", color: "#ffffff" }}>
+                            Duplicar mês anterior
+                        </Text>
                     </Pressable>
                 </View>
-                <View style={styles.calendarWrapper}>
-                    <CalendarDashboard
-                        month={month}
-                        data={mapServiceDaysToCalendar(serviceDays)}
-                        onDayPress={(day) => onDayPress(day.date)}
-                    />
 
-                </View>
-                <Pressable style={styles.addBtn} onPress={handleDuplicateMonth}>
-                    <Text style={{ fontWeight: "700", color: "#ffffff" }}>
-                        Duplicar mês anterior
-                    </Text>
-                </Pressable>
-            </View>
+                <Modal
+                    visible={!!selectedServiceDay || !!pendingDate}
+                    transparent
+                    animationType="slide"
+                    onRequestClose={closeModal}
+                >
+                    <View style={styles.modalOverlay}>
+                        <KeyboardAvoidingView
+                            behavior={Platform.OS === "ios" ? "padding" : "height"}
+                            keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
+                        >
+                            <View style={styles.modal}>
+                                <Text style={styles.modalTitle}>
+                                    Cultos —{" "}
+                                    {(selectedServiceDay?.date ?? pendingDate)?.toLocaleDateString(
+                                        "pt-BR",
+                                        {
+                                            weekday: "long",
+                                            day: "2-digit",
+                                            month: "2-digit",
+                                        }
+                                    )}
+                                </Text>
 
-            <Modal
-                visible={!!selectedServiceDay || !!pendingDate}
-                transparent
-                animationType="slide"
-                onRequestClose={closeModal}
-            >
-                <View style={styles.modalOverlay}>
-                    <KeyboardAvoidingView
-                        behavior={Platform.OS === "ios" ? "padding" : "height"}
-                        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
-                    >
+                                <Text style={styles.sectionTitle}>
+                                    Selecione quantos cultos este dia terá.
+                                </Text>
+
+                                <View style={styles.countRow}>
+                                    {[1, 2, 3].map((n) => (
+                                        <Pressable
+                                            key={n}
+                                            style={[
+                                                styles.countBtn,
+                                                servicesCount === n && styles.countBtnActive,
+                                            ]}
+                                            onPress={() => {
+                                                setServicesCount(n);
+
+                                                if (n === 1) {
+                                                    setDraftServices([
+                                                        { label: "Culto", shift: "custom" },
+                                                    ]);
+                                                } else {
+                                                    const labels = ["Manhã", "Noite", "Tarde"] as const;
+                                                    const shifts = ["manha", "noite", "tarde"] as const;
+
+                                                    setDraftServices(
+                                                        Array.from({ length: n }).map((_, i) => ({
+                                                            label: labels[i] ?? `Culto ${i + 1}`,
+                                                            shift: shifts[i] ?? "custom",
+                                                        }))
+                                                    );
+                                                }
+                                            }}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.countText,
+                                                    servicesCount === n && styles.countTextActive,
+                                                ]}
+                                            >
+                                                {n}
+                                            </Text>
+                                        </Pressable>
+                                    ))}
+                                </View>
+
+                                {/* LISTA (modo rascunho) */}
+                                {pendingDate ? (
+                                    draftServices.length === 0 ? (
+                                        <Text style={styles.noPeople}>
+                                            Nenhum culto configurado
+                                        </Text>
+                                    ) : (
+                                        draftServices.map((s, index) => (
+                                            <View key={index} style={styles.serviceRow}>
+                                                <Text style={styles.serviceTitle}>
+                                                    {index + 1}. {s.label}
+                                                </Text>
+
+                                                <Pressable
+                                                    style={styles.deleteBtn}
+                                                    onPress={() =>
+                                                        setDraftServices((prev) =>
+                                                            prev.filter((_, i) => i !== index)
+                                                        )
+                                                    }
+                                                >
+                                                    <Text style={styles.deleteText}>Remover</Text>
+                                                </Pressable>
+                                            </View>
+                                        ))
+                                    )
+                                ) : (
+                                    <Text style={styles.noPeople}>
+                                        Este dia já está salvo. Para alterar, remova e crie novamente.
+                                    </Text>
+                                )}
+
+                                {/* ADICIONAR (só habilita após salvar/criar day) */}
+                                <View style={styles.addRow}>
+                                    <TextInput
+                                        value={newServiceLabel}
+                                        onChangeText={setNewServiceLabel}
+                                        autoCapitalize="words"
+                                        placeholder="Ex: Manhã, Noite, 18h"
+                                        style={styles.input}
+                                    />
+                                    <Pressable
+                                        style={[
+                                            styles.addBtn,
+                                            !pendingDate && { opacity: 0.5 },
+                                        ]}
+                                        onPress={addDraftService}
+                                        disabled={!pendingDate}
+                                    >
+                                        <Text style={styles.addText}>Adicionar</Text>
+                                    </Pressable>
+                                </View>
+
+                                <View style={styles.footer}>
+                                    <Pressable style={styles.cancelBtn} onPress={closeModal}>
+                                        <Text style={styles.cancelText}>Cancelar</Text>
+                                    </Pressable>
+
+                                    <Pressable
+                                        style={[
+                                            styles.saveBtn,
+                                            servicesCount === null && { opacity: 0.5 },
+                                        ]}
+                                        disabled={servicesCount === null}
+                                        onPress={saveServices}
+                                    >
+                                        <Text style={styles.saveText}>Salvar</Text>
+                                    </Pressable>
+
+                                </View>
+                            </View>
+                        </KeyboardAvoidingView>
+                    </View>
+                </Modal>
+                <Modal
+                    visible={!!confirmDay}
+                    transparent
+                    animationType="fade"
+                    onRequestClose={() => setConfirmDay(null)}
+                >
+                    <View style={styles.modalOverlay}>
                         <View style={styles.modal}>
                             <Text style={styles.modalTitle}>
-                                Cultos —{" "}
-                                {(selectedServiceDay?.date ?? pendingDate)?.toLocaleDateString(
-                                    "pt-BR",
-                                    {
-                                        weekday: "long",
-                                        day: "2-digit",
-                                        month: "2-digit",
-                                    }
-                                )}
+                                Remover cultos do dia
                             </Text>
 
                             <Text style={styles.sectionTitle}>
-                                Selecione quantos cultos este dia terá.
+                                {confirmDay?.date.toLocaleDateString("pt-BR", {
+                                    weekday: "long",
+                                    day: "2-digit",
+                                    month: "2-digit",
+                                })}
                             </Text>
 
-                            <View style={styles.countRow}>
-                                {[1, 2, 3].map((n) => (
-                                    <Pressable
-                                        key={n}
-                                        style={[
-                                            styles.countBtn,
-                                            servicesCount === n && styles.countBtnActive,
-                                        ]}
-                                        onPress={() => {
-                                            setServicesCount(n);
-
-                                            if (n === 1) {
-                                                setDraftServices([
-                                                    { label: "Culto", shift: "custom" },
-                                                ]);
-                                            } else {
-                                                const labels = ["Manhã", "Noite", "Tarde"] as const;
-                                                const shifts = ["manha", "noite", "tarde"] as const;
-
-                                                setDraftServices(
-                                                    Array.from({ length: n }).map((_, i) => ({
-                                                        label: labels[i] ?? `Culto ${i + 1}`,
-                                                        shift: shifts[i] ?? "custom",
-                                                    }))
-                                                );
-                                            }
-                                        }}
-                                    >
-                                        <Text
-                                            style={[
-                                                styles.countText,
-                                                servicesCount === n && styles.countTextActive,
-                                            ]}
-                                        >
-                                            {n}
-                                        </Text>
-                                    </Pressable>
-                                ))}
-                            </View>
-
-                            {/* LISTA (modo rascunho) */}
-                            {pendingDate ? (
-                                draftServices.length === 0 ? (
-                                    <Text style={styles.noPeople}>
-                                        Nenhum culto configurado
-                                    </Text>
-                                ) : (
-                                    draftServices.map((s, index) => (
-                                        <View key={index} style={styles.serviceRow}>
-                                            <Text style={styles.serviceTitle}>
-                                                {index + 1}. {s.label}
-                                            </Text>
-
-                                            <Pressable
-                                                style={styles.deleteBtn}
-                                                onPress={() =>
-                                                    setDraftServices((prev) =>
-                                                        prev.filter((_, i) => i !== index)
-                                                    )
-                                                }
-                                            >
-                                                <Text style={styles.deleteText}>Remover</Text>
-                                            </Pressable>
-                                        </View>
-                                    ))
-                                )
-                            ) : (
+                            {confirmServices.length === 0 ? (
                                 <Text style={styles.noPeople}>
-                                    Este dia já está salvo. Para alterar, remova e crie novamente.
+                                    Nenhum culto cadastrado
                                 </Text>
+                            ) : (
+                                confirmServices.map((s) => (
+                                    <Text key={s.id} style={styles.serviceTitle}>
+                                        • {s.label}
+                                    </Text>
+                                ))
                             )}
 
-                            {/* ADICIONAR (só habilita após salvar/criar day) */}
-                            <View style={styles.addRow}>
-                                <TextInput
-                                    value={newServiceLabel}
-                                    onChangeText={setNewServiceLabel}
-                                    autoCapitalize="words"
-                                    placeholder="Ex: Manhã, Noite, 18h"
-                                    style={styles.input}
-                                />
-                                <Pressable
-                                    style={[
-                                        styles.addBtn,
-                                        !pendingDate && { opacity: 0.5 },
-                                    ]}
-                                    onPress={addDraftService}
-                                    disabled={!pendingDate}
-                                >
-                                    <Text style={styles.addText}>Adicionar</Text>
-                                </Pressable>
-                            </View>
+                            <Text style={{ marginTop: 12, color: "#991B1B" }}>
+                                Essa ação removerá todos os cultos deste dia.
+                            </Text>
 
                             <View style={styles.footer}>
-                                <Pressable style={styles.cancelBtn} onPress={closeModal}>
+                                <Pressable
+                                    style={styles.cancelBtn}
+                                    onPress={() => setConfirmDay(null)}
+                                >
                                     <Text style={styles.cancelText}>Cancelar</Text>
                                 </Pressable>
 
                                 <Pressable
-                                    style={[
-                                        styles.saveBtn,
-                                        servicesCount === null && { opacity: 0.5 },
-                                    ]}
-                                    disabled={servicesCount === null}
-                                    onPress={saveServices}
+                                    style={styles.deleteBtnRemove}
+                                    onPress={async () => {
+                                        if (!confirmDay) return;
+                                        await deleteServiceDay(confirmDay.id);
+                                        setConfirmDay(null);
+                                        await load();
+                                    }}
                                 >
-                                    <Text style={styles.saveText}>Salvar</Text>
+                                    <Text style={styles.deleteTextRemove}>Remover</Text>
                                 </Pressable>
-
                             </View>
                         </View>
-                    </KeyboardAvoidingView>
-                </View>
-            </Modal>
-            <Modal
-                visible={!!confirmDay}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setConfirmDay(null)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modal}>
-                        <Text style={styles.modalTitle}>
-                            Remover cultos do dia
-                        </Text>
-
-                        <Text style={styles.sectionTitle}>
-                            {confirmDay?.date.toLocaleDateString("pt-BR", {
-                                weekday: "long",
-                                day: "2-digit",
-                                month: "2-digit",
-                            })}
-                        </Text>
-
-                        {confirmServices.length === 0 ? (
-                            <Text style={styles.noPeople}>
-                                Nenhum culto cadastrado
-                            </Text>
-                        ) : (
-                            confirmServices.map((s) => (
-                                <Text key={s.id} style={styles.serviceTitle}>
-                                    • {s.label}
-                                </Text>
-                            ))
-                        )}
-
-                        <Text style={{ marginTop: 12, color: "#991B1B" }}>
-                            Essa ação removerá todos os cultos deste dia.
-                        </Text>
-
-                        <View style={styles.footer}>
-                            <Pressable
-                                style={styles.cancelBtn}
-                                onPress={() => setConfirmDay(null)}
-                            >
-                                <Text style={styles.cancelText}>Cancelar</Text>
-                            </Pressable>
-
-                            <Pressable
-                                style={styles.deleteBtnRemove}
-                                onPress={async () => {
-                                    if (!confirmDay) return;
-                                    await deleteServiceDay(confirmDay.id);
-                                    setConfirmDay(null);
-                                    await load();
-                                }}
-                            >
-                                <Text style={styles.deleteTextRemove}>Remover</Text>
-                            </Pressable>
-                        </View>
                     </View>
-                </View>
-            </Modal>
+                </Modal>
+            </ScrollView>
         </AppScreen>
     );
 }
