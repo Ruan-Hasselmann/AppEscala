@@ -81,6 +81,13 @@ export default function AdminLayout() {
                 }}
             />
 
+            <Tabs.Screen
+                name="settings/scale-rules"
+                options={{
+                    href: null, // 👈 ESCONDE DO TABS
+                }}
+            />
+
         </Tabs>
     );
 }
