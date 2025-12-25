@@ -4,11 +4,12 @@ import { useAuth } from "@/src/contexts/AuthContext";
 
 import { listMinistries, Ministry } from "@/src/services/ministries";
 import { listPeople, Person } from "@/src/services/people";
-import { saveScheduleDraft } from "@/src/services/schedules";
+import { getScheduleByService, publishSchedule, saveScheduleDraft } from "@/src/services/schedules";
 
-import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
+    Modal,
     Pressable,
     ScrollView,
     StyleSheet,
@@ -49,25 +50,50 @@ export default function LeaderGenerateSchedule() {
     const [people, setPeople] = useState<Person[]>([]);
     const [ministries, setMinistries] = useState<Ministry[]>([]);
     const [assigned, setAssigned] = useState<AssignedPerson[]>([]);
+    const [showSavedModal, setShowSavedModal] = useState(false);
+    const [scheduleStatus, setScheduleStatus] =
+        useState<"draft" | "published" | "empty">("empty");
+    const [showPublishModal, setShowPublishModal] = useState(false);
+
 
     /* =========================
        LOAD
     ========================= */
 
+    async function loadSchedule() {
+        if (!serviceDayId || !serviceLabel || !ministryId) return;
+
+        const [p, m, existing] = await Promise.all([
+            listPeople(),
+            listMinistries(),
+            getScheduleByService({
+                serviceDayId,
+                serviceLabel,
+                ministryId,
+            }),
+        ]);
+
+        setPeople(p.filter((x) => x.active));
+        setMinistries(m.filter((x) => x.active));
+
+        if (existing) {
+            setAssigned(
+                existing.people.map((p) => ({
+                    personId: p.personId,
+                    ministryId,
+                }))
+            );
+            setScheduleStatus(existing.status);
+        } else {
+            setAssigned([]);
+            setScheduleStatus("empty");
+        }
+    }
+
     useFocusEffect(
         useCallback(() => {
-            async function load() {
-                const [p, m] = await Promise.all([
-                    listPeople(),
-                    listMinistries(),
-                ]);
-
-                setPeople(p.filter((x) => x.active));
-                setMinistries(m.filter((x) => x.active));
-            }
-
-            load();
-        }, [])
+            loadSchedule();
+        }, [serviceDayId, serviceLabel, ministryId])
     );
 
     const currentMinistry = ministries.find(
@@ -125,7 +151,6 @@ export default function LeaderGenerateSchedule() {
 
     async function handleSaveDraft() {
         if (!serviceDayId || !serviceLabel || !ministryId) {
-            alert(serviceDayId);
             return;
         }
 
@@ -144,7 +169,23 @@ export default function LeaderGenerateSchedule() {
             }),
         });
 
-        alert("Escala salva como rascunho");
+        setShowSavedModal(true);
+    }
+
+    async function handlePublish() {
+        if (!serviceDayId || !serviceLabel || !ministryId) return;
+
+        await publishSchedule({
+            serviceDayId,
+            serviceLabel,
+            ministryId,
+        });
+
+        setScheduleStatus("published");
+        setShowPublishModal(false);
+        router.push({
+            pathname: "/(protected)/(leader)/schedule"
+        })
     }
 
     /* =========================
@@ -164,7 +205,22 @@ export default function LeaderGenerateSchedule() {
                     <Text style={styles.sectionInfo}>
                         Escala para: {serviceLabel} {date}
                     </Text>
-
+                    <View
+                        style={[
+                            styles.statusBadge,
+                            scheduleStatus === "published" && styles.statusPublished,
+                            scheduleStatus === "draft" && styles.statusDraft,
+                            scheduleStatus === "empty" && styles.statusEmpty,
+                        ]}
+                    >
+                        <Text style={styles.statusText}>
+                            {scheduleStatus === "published"
+                                ? "Escala publicada"
+                                : scheduleStatus === "draft"
+                                    ? "Rascunho"
+                                    : "Nenhuma escala criada"}
+                        </Text>
+                    </View>
                     <Text style={styles.sectionTitle}>
                         Pessoas escaladas
                     </Text>
@@ -207,6 +263,16 @@ export default function LeaderGenerateSchedule() {
                             Salvar como rascunho
                         </Text>
                     </Pressable>
+                    {scheduleStatus === "draft" && (
+                        <Pressable
+                            style={styles.publishBtn}
+                            onPress={() => setShowPublishModal(true)}
+                        >
+                            <Text style={styles.publishText}>
+                                Publicar escala
+                            </Text>
+                        </Pressable>
+                    )}
 
                     <Text style={styles.sectionTitle}>
                         Pessoas disponíveis
@@ -223,6 +289,72 @@ export default function LeaderGenerateSchedule() {
                         </Pressable>
                     ))}
                 </View>
+                <Modal
+                    visible={showSavedModal}
+                    transparent
+                    animationType="fade"
+                >
+                    <View style={styles.overlay}>
+                        <View style={styles.modal}>
+                            <Text style={styles.modalTitle}>
+                                Escala salva
+                            </Text>
+
+                            <Text style={styles.modalText}>
+                                A escala foi salva com sucesso como rascunho.
+                                Você pode continuar editando ou voltar depois.
+                            </Text>
+
+                            <Pressable
+                                style={styles.modalBtn}
+                                onPress={async () => {
+                                    setShowSavedModal(false);
+                                    await loadSchedule(); // 🔥 força refresh
+                                }}
+                            >
+                                <Text style={styles.modalBtnText}>
+                                    Entendi
+                                </Text>
+                            </Pressable>
+                        </View>
+                    </View>
+                </Modal>
+                <Modal
+                    visible={showPublishModal}
+                    transparent
+                    animationType="fade"
+                >
+                    <View style={styles.overlay}>
+                        <View style={styles.modal}>
+                            <Text style={styles.modalTitle}>
+                                Publicar escala
+                            </Text>
+
+                            <Text style={styles.modalText}>
+                                Após publicar, a escala ficará visível para os membros
+                                e não poderá ser editada.
+                            </Text>
+
+                            <Pressable
+                                style={styles.modalPrimary}
+                                onPress={handlePublish}
+                            >
+                                <Text style={styles.modalPrimaryText}>
+                                    Confirmar publicação
+                                </Text>
+                            </Pressable>
+
+                            <Pressable
+                                style={styles.modalSecondary}
+                                onPress={() => setShowPublishModal(false)}
+                            >
+                                <Text style={styles.modalSecondaryText}>
+                                    Cancelar
+                                </Text>
+                            </Pressable>
+                        </View>
+                    </View>
+                </Modal>
             </ScrollView>
         </AppScreen>
     );
@@ -296,6 +428,104 @@ const styles = StyleSheet.create({
     saveText: {
         color: "#FFFFFF",
         fontWeight: "800",
+    },
+    overlay: {
+        flex: 1,
+        backgroundColor: "rgba(0,0,0,0.45)",
+        justifyContent: "center",
+        alignItems: "center",
+    },
+
+    modal: {
+        width: "85%",
+        backgroundColor: "#FFFFFF",
+        borderRadius: 20,
+        padding: 20,
+    },
+
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: "900",
+        marginBottom: 8,
+        color: "#111827",
+    },
+
+    modalText: {
+        fontSize: 14,
+        color: "#374151",
+        marginBottom: 20,
+    },
+
+    modalBtn: {
+        paddingVertical: 14,
+        borderRadius: 14,
+        backgroundColor: "#111827",
+        alignItems: "center",
+    },
+
+    modalBtnText: {
+        color: "#FFFFFF",
+        fontWeight: "800",
+    },
+    statusBadge: {
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+        alignSelf: "flex-start",
+        marginBottom: 8,
+    },
+
+    statusPublished: {
+        backgroundColor: "#DCFCE7",
+    },
+
+    statusDraft: {
+        backgroundColor: "#FEF3C7",
+    },
+
+    statusEmpty: {
+        backgroundColor: "#E5E7EB",
+    },
+
+    statusText: {
+        fontWeight: "800",
+        fontSize: 12,
+        color: "#111827",
+    },
+    publishBtn: {
+        marginTop: 12,
+        paddingVertical: 14,
+        borderRadius: 14,
+        backgroundColor: "#16A34A",
+        alignItems: "center",
+    },
+
+    publishText: {
+        color: "#FFFFFF",
+        fontWeight: "800",
+    },
+
+    modalPrimary: {
+        paddingVertical: 14,
+        borderRadius: 14,
+        backgroundColor: "#16A34A",
+        alignItems: "center",
+        marginBottom: 8,
+    },
+
+    modalPrimaryText: {
+        color: "#FFFFFF",
+        fontWeight: "800",
+    },
+
+    modalSecondary: {
+        paddingVertical: 12,
+        alignItems: "center",
+    },
+
+    modalSecondaryText: {
+        color: "#6B7280",
+        fontWeight: "700",
     },
 
 });

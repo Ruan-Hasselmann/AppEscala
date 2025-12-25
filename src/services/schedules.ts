@@ -1,6 +1,7 @@
 // src/services/schedules.ts
 import {
   collection,
+  deleteDoc,
   doc,
   getDocs,
   query,
@@ -49,13 +50,12 @@ export async function saveScheduleDraft(params: {
   ministryId: string;
   people: SchedulePerson[];
 }) {
-  // 🔒 segurança extra
   if (
     !params.serviceDayId ||
     !params.serviceLabel ||
     !params.ministryId
   ) {
-    throw new Error("Parâmetros inválidos para salvar escala");
+    throw new Error("Parâmetros inválidos");
   }
 
   const q = query(
@@ -67,12 +67,18 @@ export async function saveScheduleDraft(params: {
 
   const snap = await getDocs(q);
 
+  // 🔥 SE NÃO TEM PESSOAS → REMOVE A ESCALA
+  if (params.people.length === 0) {
+    if (!snap.empty) {
+      await deleteDoc(doc(db, COLLECTION, snap.docs[0].id));
+    }
+    return;
+  }
+
   // Atualiza se existir
   if (!snap.empty) {
-    const ref = doc(db, COLLECTION, snap.docs[0].id);
-
     await setDoc(
-      ref,
+      doc(db, COLLECTION, snap.docs[0].id),
       {
         people: params.people,
         status: "draft",
@@ -80,14 +86,11 @@ export async function saveScheduleDraft(params: {
       },
       { merge: true }
     );
-
     return;
   }
 
   // Cria novo
-  const ref = doc(collection(db, COLLECTION));
-
-  await setDoc(ref, {
+  await setDoc(doc(collection(db, COLLECTION)), {
     serviceDayId: params.serviceDayId,
     serviceLabel: params.serviceLabel,
     ministryId: params.ministryId,
@@ -116,4 +119,58 @@ export async function listSchedulesByMonth(params: {
     id: d.id,
     ...(d.data() as Omit<Schedule, "id">),
   }));
+}
+
+export async function getScheduleByService(params: {
+  serviceDayId: string;
+  serviceLabel: string;
+  ministryId: string;
+}) {
+  const q = query(
+    collection(db, "schedules"),
+    where("serviceDayId", "==", params.serviceDayId),
+    where("serviceLabel", "==", params.serviceLabel),
+    where("ministryId", "==", params.ministryId)
+  );
+
+  const snap = await getDocs(q);
+
+  if (snap.empty) return null;
+
+  const d = snap.docs[0];
+
+  return {
+    id: d.id,
+    ...(d.data() as Omit<Schedule, "id">),
+  };
+}
+
+export async function publishSchedule(params: {
+  serviceDayId: string;
+  serviceLabel: string;
+  ministryId: string;
+}) {
+  const q = query(
+    collection(db, "schedules"),
+    where("serviceDayId", "==", params.serviceDayId),
+    where("serviceLabel", "==", params.serviceLabel),
+    where("ministryId", "==", params.ministryId)
+  );
+
+  const snap = await getDocs(q);
+
+  if (snap.empty) {
+    throw new Error("Nenhuma escala para publicar");
+  }
+
+  const ref = doc(db, "schedules", snap.docs[0].id);
+
+  await setDoc(
+    ref,
+    {
+      status: "published",
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
 }

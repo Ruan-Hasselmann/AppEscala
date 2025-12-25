@@ -400,7 +400,7 @@ export default function LeaderSchedule() {
                             }}
                         >
                             <Text style={styles.generateText}>
-                                Gerar escala
+                                Gerenciar escala
                             </Text>
                         </Pressable>
 

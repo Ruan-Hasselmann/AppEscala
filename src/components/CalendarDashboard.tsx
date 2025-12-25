@@ -74,12 +74,18 @@ function getCalendarMatrix(year: number, month: number) {
   return days;
 }
 
-function getDayStatus(services: CalendarDayData["services"]) {
-  if (services.length === 0) return null;
-  if (services.some((s) => s.status === "empty")) return "empty";
-  if (services.some((s) => s.status === "draft")) return "draft";
-  return "published";
+function getDayStatus(
+  services: CalendarDayData["services"]
+): CalendarServiceStatus {
+  if (services.some(s => s.status === "published")) {
+    return "published";
+  }
+  if (services.some(s => s.status === "draft")) {
+    return "draft";
+  }
+  return "empty";
 }
+
 
 /* =========================
    COMPONENT
@@ -163,13 +169,26 @@ export function CalendarDashboard({
                 <View
                   style={[
                     styles.dot,
-                    styles.dotPending,
+                    status === "published"
+                      ? styles.dotPublished
+                      : status === "draft"
+                        ? styles.dotDraft
+                        : styles.dotEmpty,
                   ]}
                 />
               )}
 
               {dayData && dayData.services.length > 1 && (
-                <View style={styles.badge}>
+                <View
+                  style={[
+                    styles.badge,
+                    status === "published"
+                      ? styles.badgePublished
+                      : status === "draft"
+                        ? styles.badgeDraft
+                        : styles.badgeEmpty,
+                  ]}
+                >
                   <Text style={styles.badgeText}>
                     {dayData.services.length}
                   </Text>
@@ -366,6 +385,21 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "800",
+  },
+  dotEmpty: {
+    backgroundColor: "#D1D5DB", // cinza
+  },
+
+  badgePublished: {
+    backgroundColor: "#22C55E", // verde
+  },
+
+  badgeDraft: {
+    backgroundColor: "#F59E0B", // amarelo
+  },
+
+  badgeEmpty: {
+    backgroundColor: "#9CA3AF", // cinza
   },
 
 });
