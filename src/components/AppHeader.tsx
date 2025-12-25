@@ -19,7 +19,7 @@ export function AppHeader({
       style={[
         styles.container,
         {
-          paddingTop: insets.top + 12, // ✅ status bar segura
+          paddingTop: insets.top, // ✅ status bar segura
         },
       ]}
     >

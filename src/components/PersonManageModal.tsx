@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Ministry } from "@/src/services/ministries";
@@ -21,6 +21,13 @@ type Props = {
   visible: boolean;
   person: Person | null;
   ministries: Ministry[];
+
+  /** 🔒 se definido, limita o modal a apenas 1 ministério (uso do líder) */
+  restrictToMinistryId?: string;
+
+  /** 🔒 se false, impede adicionar/remover ministério */
+  allowRemoveMinistry?: boolean;
+
   onClose: () => void;
   onSaved: () => Promise<void>;
 };
@@ -33,6 +40,8 @@ export function PersonManageModal({
   visible,
   person,
   ministries,
+  restrictToMinistryId,
+  allowRemoveMinistry = true,
   onClose,
   onSaved,
 }: Props) {
@@ -59,10 +68,26 @@ export function PersonManageModal({
   }, [person]);
 
   /* =========================
+     DERIVED
+  ========================= */
+
+  const visibleMinistries = useMemo(() => {
+    if (restrictToMinistryId) {
+      return ministries.filter(
+        (m) => m.id === restrictToMinistryId
+      );
+    }
+
+    return ministries;
+  }, [ministries, restrictToMinistryId]);
+
+  /* =========================
      ACTIONS
   ========================= */
 
   function toggleMinistry(ministryId: string) {
+    if (!allowRemoveMinistry) return;
+
     setSelectedMinistries((prev) =>
       prev.some((m) => m.ministryId === ministryId)
         ? prev.filter((m) => m.ministryId !== ministryId)
@@ -115,6 +140,7 @@ export function PersonManageModal({
             {person.email}
           </Text>
 
+          {/* 🔒 líder pode ou não ver isso depois — por enquanto mantido */}
           <Pressable
             style={[
               styles.statusPill,
@@ -131,7 +157,7 @@ export function PersonManageModal({
             Ministérios
           </Text>
 
-          {ministries.map((m) => {
+          {visibleMinistries.map((m) => {
             const entry = selectedMinistries.find(
               (x) => x.ministryId === m.id
             );
@@ -142,8 +168,8 @@ export function PersonManageModal({
                 <Pressable
                   style={[
                     styles.belongsBtn,
-                    belongs &&
-                      styles.belongsBtnActive,
+                    belongs && styles.belongsBtnActive,
+                    !allowRemoveMinistry && { opacity: 0.4 },
                   ]}
                   onPress={() => toggleMinistry(m.id)}
                 >

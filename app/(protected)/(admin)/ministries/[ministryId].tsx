@@ -5,7 +5,7 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { listMinistries, Ministry } from "@/src/services/ministries";
 import { listPeople, Person } from "@/src/services/people";
 
-import { PersonManageModal } from "@/src/components/admin/PersonManageModal";
+import { PersonManageModal } from "@/src/components/PersonManageModal";
 
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useState } from "react";

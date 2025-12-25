@@ -22,6 +22,7 @@ export type AppUser = {
   email: string;
   name: string;
   role: SystemRole;
+  personId: string;
 };
 
 type RegisterInput = {
@@ -69,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: person.email,
           name: person.name,
           role: person.role,
+          personId: person.id,
         });
       } catch (err) {
         console.error("Erro ao carregar perfil:", err);

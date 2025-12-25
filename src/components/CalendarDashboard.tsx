@@ -14,12 +14,13 @@ import {
 ========================= */
 
 export type CalendarServiceStatus =
-  | "pending"
+  | "empty"
   | "draft"
   | "published";
 
 export type CalendarDayData = {
   date: Date;
+  serviceDayId: string;
   services: {
     label: string;
     status: CalendarServiceStatus;
@@ -75,7 +76,7 @@ function getCalendarMatrix(year: number, month: number) {
 
 function getDayStatus(services: CalendarDayData["services"]) {
   if (services.length === 0) return null;
-  if (services.some((s) => s.status === "pending")) return "pending";
+  if (services.some((s) => s.status === "empty")) return "empty";
   if (services.some((s) => s.status === "draft")) return "draft";
   return "published";
 }
@@ -149,6 +150,7 @@ export function CalendarDashboard({
                   onDayPress({
                     date,
                     services: [],
+                    serviceDayId: ""
                   });
                 }
               }}

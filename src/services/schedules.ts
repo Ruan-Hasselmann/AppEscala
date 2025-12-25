@@ -2,16 +2,14 @@
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
   query,
   serverTimestamp,
   setDoc,
-  updateDoc,
   where,
 } from "firebase/firestore";
 
-import { db } from "@/src/services/firebase";
+import { db } from "./firebase";
 
 /* =========================
    TYPES
@@ -19,36 +17,20 @@ import { db } from "@/src/services/firebase";
 
 export type ScheduleStatus = "draft" | "published";
 
-export type ScheduleAssignment = {
+export type SchedulePerson = {
   personId: string;
-  personName: string;
-};
-
-export type ScheduleTurnAssignments = {
-  morning?: ScheduleAssignment[];
-  night?: ScheduleAssignment[];
-};
-
-export type ScheduleDay = {
-  date: string; // YYYY-MM-DD
-  turns: ScheduleTurnAssignments;
+  name: string;
 };
 
 export type Schedule = {
   id: string;
+  serviceDayId: string;
+  serviceLabel: string;
   ministryId: string;
-  monthKey: string; // YYYY-MM
-
   status: ScheduleStatus;
-  days: ScheduleDay[];
-
+  people: SchedulePerson[];
   createdAt?: any;
   updatedAt?: any;
-};
-
-export type CreateScheduleInput = {
-  ministryId: string;
-  monthKey: string;
 };
 
 /* =========================
@@ -58,95 +40,80 @@ export type CreateScheduleInput = {
 const COLLECTION = "schedules";
 
 /* =========================
-   CREATE
+   SAVE DRAFT
 ========================= */
 
-export async function createSchedule(
-  input: CreateScheduleInput
-) {
-  const ref = doc(collection(db, COLLECTION));
+export async function saveScheduleDraft(params: {
+  serviceDayId: string;
+  serviceLabel: string;
+  ministryId: string;
+  people: SchedulePerson[];
+}) {
+  // 🔒 segurança extra
+  if (
+    !params.serviceDayId ||
+    !params.serviceLabel ||
+    !params.ministryId
+  ) {
+    throw new Error("Parâmetros inválidos para salvar escala");
+  }
 
-  const data = {
-    ministryId: input.ministryId,
-    monthKey: input.monthKey,
-
-    status: "draft",
-    days: [],
-
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  };
-
-  await setDoc(ref, data);
-}
-
-/* =========================
-   READ
-========================= */
-
-export async function getScheduleById(
-  id: string
-): Promise<Schedule | null> {
-  const ref = doc(db, COLLECTION, id);
-  const snap = await getDoc(ref);
-
-  if (!snap.exists()) return null;
-
-  return {
-    id: snap.id,
-    ...(snap.data() as Omit<Schedule, "id">),
-  };
-}
-
-export async function getScheduleByMinistryAndMonth(
-  ministryId: string,
-  monthKey: string
-): Promise<Schedule | null> {
-  const ref = collection(db, COLLECTION);
   const q = query(
-    ref,
-    where("ministryId", "==", ministryId),
-    where("monthKey", "==", monthKey)
+    collection(db, COLLECTION),
+    where("serviceDayId", "==", params.serviceDayId),
+    where("serviceLabel", "==", params.serviceLabel),
+    where("ministryId", "==", params.ministryId)
   );
 
   const snap = await getDocs(q);
-  if (snap.empty) return null;
 
-  const d = snap.docs[0];
+  // Atualiza se existir
+  if (!snap.empty) {
+    const ref = doc(db, COLLECTION, snap.docs[0].id);
 
-  return {
-    id: d.id,
-    ...(d.data() as Omit<Schedule, "id">),
-  };
+    await setDoc(
+      ref,
+      {
+        people: params.people,
+        status: "draft",
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    return;
+  }
+
+  // Cria novo
+  const ref = doc(collection(db, COLLECTION));
+
+  await setDoc(ref, {
+    serviceDayId: params.serviceDayId,
+    serviceLabel: params.serviceLabel,
+    ministryId: params.ministryId,
+    people: params.people,
+    status: "draft",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
 }
 
-export async function listSchedulesByMinistry(
-  ministryId: string
-): Promise<Schedule[]> {
-  const ref = collection(db, COLLECTION);
-  const q = query(ref, where("ministryId", "==", ministryId));
+export async function listSchedulesByMonth(params: {
+  ministryId: string;
+  serviceDayIds: string[];
+}): Promise<Schedule[]> {
+  if (params.serviceDayIds.length === 0) return [];
+
+  const q = query(
+    collection(db, "schedules"),
+    where("ministryId", "==", params.ministryId),
+    where("serviceDayId", "in", params.serviceDayIds)
+  );
+
   const snap = await getDocs(q);
 
   return snap.docs.map((d) => ({
     id: d.id,
     ...(d.data() as Omit<Schedule, "id">),
   }));
-}
-
-/* =========================
-   UPDATE
-========================= */
-
-export async function updateSchedule(
-  id: string,
-  data: Partial<
-    Pick<Schedule, "status" | "days">
-  >
-) {
-  const ref = doc(db, COLLECTION, id);
-
-  await updateDoc(ref, {
-    ...data,
-    updatedAt: serverTimestamp(),
-  });
 }
