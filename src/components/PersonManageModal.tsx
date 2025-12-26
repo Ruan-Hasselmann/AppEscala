@@ -7,6 +7,10 @@ import {
   togglePersonStatus,
   updatePersonMinistries,
 } from "@/src/services/people";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { SystemRole } from "../constants/role";
+import { useAuth } from "../contexts/AuthContext";
+import { db } from "../services/firebase";
 
 /* =========================
    TYPES
@@ -36,6 +40,16 @@ type Props = {
    COMPONENT
 ========================= */
 
+export async function updatePersonSystemRole(
+  personId: string,
+  role: SystemRole
+) {
+  await updateDoc(doc(db, "people", personId), {
+    role,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export function PersonManageModal({
   visible,
   person,
@@ -49,6 +63,8 @@ export function PersonManageModal({
     SelectedMinistry[]
   >([]);
   const [active, setActive] = useState(true);
+  const { refreshUser } = useAuth();
+
 
   /* =========================
      SYNC STATE
@@ -109,16 +125,38 @@ export function PersonManageModal({
   async function handleSave() {
     if (!person) return;
 
+    // 1️⃣ Atualiza ministérios
     await updatePersonMinistries(
       person.id,
       selectedMinistries
     );
 
+    // 2️⃣ Atualiza status ativo/inativo
     if (active !== person.active) {
       await togglePersonStatus(person.id, active);
     }
 
+    // 3️⃣ 🔥 REGRA DO ROLE DO SISTEMA
+    // Admin nunca muda
+    if (person.role !== "admin") {
+      const hasLeaderRole = selectedMinistries.some(
+        (m) => m.role === "leader"
+      );
+
+      const newSystemRole = hasLeaderRole
+        ? "leader"
+        : "member";
+
+      if (newSystemRole !== person.role) {
+        await updatePersonSystemRole(
+          person.id,
+          newSystemRole
+        );
+      }
+    }
+
     await onSaved();
+    await refreshUser(); // 🔥 força reavaliação do role
     onClose();
   }
 
