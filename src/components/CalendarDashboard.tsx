@@ -16,13 +16,15 @@ import {
 export type CalendarServiceStatus =
   | "empty"
   | "draft"
-  | "published";
+  | "published"
+  | "partial";
 
 export type CalendarDayData = {
   date: Date;
   serviceDayId: string;
   services: {
-    label: string;
+    turno: string;
+    ministry: string;
     status: CalendarServiceStatus;
     people?: {
       id?: string;
@@ -53,8 +55,7 @@ function isSameDay(a: Date, b: Date) {
 }
 
 function isToday(date: Date) {
-  const t = new Date();
-  return isSameDay(date, t);
+  return isSameDay(date, new Date());
 }
 
 function getCalendarMatrix(year: number, month: number) {
@@ -63,10 +64,7 @@ function getCalendarMatrix(year: number, month: number) {
 
   const days: (Date | null)[] = [];
 
-  for (let i = 0; i < first.getDay(); i++) {
-    days.push(null);
-  }
-
+  for (let i = 0; i < first.getDay(); i++) days.push(null);
   for (let d = 1; d <= last.getDate(); d++) {
     days.push(new Date(year, month, d));
   }
@@ -74,18 +72,25 @@ function getCalendarMatrix(year: number, month: number) {
   return days;
 }
 
+/**
+ * Status consolidado do dia
+ */
 function getDayStatus(
   services: CalendarDayData["services"]
 ): CalendarServiceStatus {
-  if (services.some(s => s.status === "published")) {
-    return "published";
-  }
-  if (services.some(s => s.status === "draft")) {
-    return "draft";
-  }
+  const total = services.length;
+  const published = services.filter(
+    (s) => s.status === "published"
+  ).length;
+  const draft = services.filter(
+    (s) => s.status === "draft"
+  ).length;
+
+  if (total > 0 && published === total) return "published";
+  if (published > 0) return "partial";
+  if (draft > 0) return "draft";
   return "empty";
 }
-
 
 /* =========================
    COMPONENT
@@ -109,19 +114,16 @@ export function CalendarDashboard({
   );
 
   function handlePress(day: CalendarDayData) {
-    if (onDayPress) {
-      onDayPress(day);
-    } else {
-      setSelectedDay(day);
-    }
+    if (onDayPress) onDayPress(day);
+    else setSelectedDay(day);
   }
 
   return (
     <View>
       {/* WEEK DAYS */}
       <View style={styles.weekRow}>
-        {WEEK_DAYS.map((d, index) => (
-          <Text key={`${d}-${index}`} style={styles.weekDay}>
+        {WEEK_DAYS.map((d, i) => (
+          <Text key={i} style={styles.weekDay}>
             {d}
           </Text>
         ))}
@@ -130,9 +132,8 @@ export function CalendarDashboard({
       {/* CALENDAR */}
       <View style={styles.calendar}>
         {matrix.map((date, index) => {
-          if (!date) {
+          if (!date)
             return <View key={index} style={styles.empty} />;
-          }
 
           const dayData = data.find((d) =>
             isSameDay(d.date, date)
@@ -140,7 +141,7 @@ export function CalendarDashboard({
 
           const status = dayData
             ? getDayStatus(dayData.services)
-            : null;
+            : "empty";
 
           return (
             <Pressable
@@ -149,57 +150,55 @@ export function CalendarDashboard({
                 styles.dayCell,
                 isToday(date) && styles.today,
               ]}
-              onPress={() => {
-                if (dayData) {
-                  handlePress(dayData);
-                } else if (onDayPress) {
-                  onDayPress({
-                    date,
-                    services: [],
-                    serviceDayId: ""
-                  });
-                }
-              }}
+              onPress={() => dayData && handlePress(dayData)}
             >
               <Text style={styles.dayNumber}>
                 {date.getDate()}
               </Text>
 
-              {dayData && dayData.services.length === 1 && (
-                <View
-                  style={[
-                    styles.dot,
-                    status === "published"
-                      ? styles.dotPublished
-                      : status === "draft"
-                        ? styles.dotDraft
-                        : styles.dotEmpty,
-                  ]}
-                />
-              )}
+              {/* 1 culto → dot */}
+              {dayData &&
+                dayData.services.length === 1 && (
+                  <View
+                    style={[
+                      styles.dot,
+                      status === "published"
+                        ? styles.dotPublished
+                        : status === "partial"
+                          ? styles.dotPartial
+                          : status === "draft"
+                            ? styles.dotDraft
+                            : styles.dotEmpty,
+                    ]}
+                  />
+                )}
 
-              {dayData && dayData.services.length > 1 && (
-                <View
-                  style={[
-                    styles.badge,
-                    status === "published"
-                      ? styles.badgePublished
-                      : status === "draft"
-                        ? styles.badgeDraft
-                        : styles.badgeEmpty,
-                  ]}
-                >
-                  <Text style={styles.badgeText}>
-                    {dayData.services.length}
-                  </Text>
-                </View>
-              )}
+              {/* 2+ cultos → badge */}
+              {dayData &&
+                dayData.services.length > 1 && (
+                  <View
+                    style={[
+                      styles.badge,
+                      status === "published"
+                        ? styles.badgePublished
+                        : status === "partial"
+                          ? styles.badgePartial
+                          : status === "draft"
+                            ? styles.badgeDraft
+                            : styles.badgeEmpty,
+                    ]}
+                  >
+                    <Text style={styles.badgeText}>
+                      {dayData.services.length}
+                    </Text>
+                  </View>
+                )}
             </Pressable>
           );
         })}
       </View>
 
-      {/* MODAL PADRÃO */}
+      {/* MODAL (fallback quando não vem onDayPress) */}
       <Modal
         visible={!!selectedDay}
         transparent
@@ -209,7 +208,6 @@ export function CalendarDashboard({
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
           >
             <View style={styles.modal}>
               <Text style={styles.modalTitle}>
@@ -218,26 +216,30 @@ export function CalendarDashboard({
                   {
                     weekday: "long",
                     day: "2-digit",
-                    month: "2-digit",
+                    month: "long",
                   }
                 )}
               </Text>
 
               {selectedDay?.services.map((s, i) => (
                 <View key={i} style={styles.service}>
+                  {/* Ministério */}
                   <Text style={styles.serviceTitle}>
-                    {s.label} —{" "}
-                    {s.status === "published"
-                      ? "✅ Publicada"
-                      : s.status === "draft"
-                        ? "📝 Rascunho"
-                        : "⚠️ Sem escala"}
+                    {s.turno} {s.ministry}
                   </Text>
-
+                  {/* STATUS — só se NÃO estiver publicado */}
+                  {s.status !== "published" && (
+                    <Text style={styles.serviceStatus}>
+                      {s.status === "draft"
+                        ? "📝 Escala em rascunho"
+                        : "⚠️ Sem escala"}
+                    </Text>
+                  )}
+                  {/* PESSOAS ESCALADAS */}
                   {s.people && s.people.length > 0 ? (
                     s.people.map((p, idx) => (
                       <Text key={idx} style={styles.person}>
-                        • {p.name} — {p.role}
+                        • {p.name}
                       </Text>
                     ))
                   ) : (
@@ -269,10 +271,8 @@ export function CalendarDashboard({
 ========================= */
 
 const styles = StyleSheet.create({
-  weekRow: {
-    flexDirection: "row",
-    marginBottom: 8,
-  },
+  person: { fontWeight: "900"},
+  weekRow: { flexDirection: "row", marginBottom: 8 },
   weekDay: {
     flex: 1,
     textAlign: "center",
@@ -280,15 +280,8 @@ const styles = StyleSheet.create({
     color: "#6B7280",
   },
 
-  calendar: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-
-  empty: {
-    width: "14.2857%",
-    aspectRatio: 1,
-  },
+  calendar: { flexDirection: "row", flexWrap: "wrap" },
+  empty: { width: "14.2857%", aspectRatio: 1 },
 
   dayCell: {
     width: "14.2857%",
@@ -298,108 +291,58 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#FFF",
     marginBottom: 10,
   },
 
-  today: {
-    borderColor: "#2563EB",
-    borderWidth: 2,
-  },
+  today: { borderColor: "#2563EB", borderWidth: 2 },
+  dayNumber: { fontWeight: "800", marginBottom: 4 },
 
-  dayNumber: {
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  dotPublished: { backgroundColor: "#22C55E" },
+  dotDraft: { backgroundColor: "#F59E0B" },
+  dotPartial: { backgroundColor: "#F97316" },
+  dotEmpty: { backgroundColor: "#D1D5DB" },
 
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  badge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  dotPublished: {
-    backgroundColor: "#22C55E",
-  },
-  dotDraft: {
-    backgroundColor: "#F59E0B",
-  },
-  dotPending: {
-    backgroundColor: "#EF4444",
-  },
+  badgeText: { color: "#FFF", fontWeight: "800", fontSize: 12 },
+  badgePublished: { backgroundColor: "#22C55E" },
+  badgeDraft: { backgroundColor: "#F59E0B" },
+  badgePartial: { backgroundColor: "#F97316" },
+  badgeEmpty: { backgroundColor: "#9CA3AF" },
 
-  /* MODAL */
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "center",
   },
-  modal: {
-    backgroundColor: "#FFFFFF",
-    padding: 20,
-    borderRadius: 20,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    marginBottom: 12,
-    textTransform: "capitalize",
-  },
-  service: {
-    marginBottom: 12,
-  },
-  serviceTitle: {
-    fontWeight: "700",
-  },
+  modal: { backgroundColor: "#FFF", padding: 20, borderRadius: 20 },
+  modalTitle: { fontSize: 18, fontWeight: "800", marginBottom: 12 , textTransform: "capitalize",},
+  service: { marginBottom: 10 },
+  serviceTitle: { fontWeight: "700" },
+  serviceStatus: { fontSize: 13, color: "#6B7280" },
+
   close: {
     marginTop: 16,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: "#111827",
     alignItems: "center",
   },
-  closeText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-  },
-  person: {
-    fontSize: 14,
-    color: "#374151",
-    marginLeft: 8,
-    marginTop: 2,
-  },
+  closeText: { color: "#FFF", fontWeight: "800" },
+
   noPeople: {
     fontSize: 13,
     color: "#9CA3AF",
     fontStyle: "italic",
     marginLeft: 8,
-  },
-  badge: {
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: "#2563EB",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  badgeText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  dotEmpty: {
-    backgroundColor: "#D1D5DB", // cinza
-  },
-
-  badgePublished: {
-    backgroundColor: "#22C55E", // verde
-  },
-
-  badgeDraft: {
-    backgroundColor: "#F59E0B", // amarelo
-  },
-
-  badgeEmpty: {
-    backgroundColor: "#9CA3AF", // cinza
+    marginTop: 2,
   },
 
 });

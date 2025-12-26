@@ -4,17 +4,23 @@ import { useAuth } from "@/src/contexts/AuthContext";
 
 import { listMinistries, Ministry } from "@/src/services/ministries";
 import { listPeople, Person } from "@/src/services/people";
-import { getScheduleByService, publishSchedule, saveScheduleDraft } from "@/src/services/schedules";
+import {
+  getScheduleByService,
+  listSchedulesByServiceDay,
+  publishSchedule,
+  saveScheduleDraft,
+  Schedule,
+} from "@/src/services/schedules";
 
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
-    Modal,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 /* =========================
@@ -22,8 +28,21 @@ import {
 ========================= */
 
 type AssignedPerson = {
-    personId: string;
-    ministryId: string;
+  personId: string;
+  ministryId: string;
+};
+
+type ConflictInfo = {
+  status: "draft" | "published";
+  ministryId: string;
+  serviceLabel: string;
+};
+
+type PersonWithFlags = Person & {
+  blocked?: boolean;
+  warnDraftOtherMinistry?: boolean;
+  warnOtherTurn?: boolean;
+  warningsText?: string[];
 };
 
 /* =========================
@@ -31,333 +50,363 @@ type AssignedPerson = {
 ========================= */
 
 export default function LeaderGenerateSchedule() {
-    const { user, logout } = useAuth();
+  const { user, logout } = useAuth();
 
-    const {
-        serviceDayId,
-        serviceLabel,
-        ministryId,
-        name,
-        date,
-    } = useLocalSearchParams<{
-        serviceDayId?: string;
-        serviceLabel?: string;
-        ministryId?: string;
-        name?: string;
-        date?: string;
+  const { serviceDayId, ministryId, name, date, serviceLabel } =
+    useLocalSearchParams<{
+      serviceDayId?: string;
+      ministryId?: string;
+      name?: string;
+      date?: string;
+      serviceLabel?: string;
     }>();
 
-    const [people, setPeople] = useState<Person[]>([]);
-    const [ministries, setMinistries] = useState<Ministry[]>([]);
-    const [assigned, setAssigned] = useState<AssignedPerson[]>([]);
-    const [showSavedModal, setShowSavedModal] = useState(false);
-    const [scheduleStatus, setScheduleStatus] =
-        useState<"draft" | "published" | "empty">("empty");
-    const [showPublishModal, setShowPublishModal] = useState(false);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [ministries, setMinistries] = useState<Ministry[]>([]);
+  const [assigned, setAssigned] = useState<AssignedPerson[]>([]);
+  const [showSavedModal, setShowSavedModal] = useState(false);
+  const [scheduleStatus, setScheduleStatus] =
+    useState<"draft" | "published" | "empty">("empty");
+  const [showPublishModal, setShowPublishModal] = useState(false);
 
+  // conflitos no MESMO DIA (para avisos/bloqueios)
+  const [conflictsByPerson, setConflictsByPerson] = useState<
+    Map<string, ConflictInfo[]>
+  >(new Map());
 
-    /* =========================
-       LOAD
-    ========================= */
+  const safeServiceDayId = serviceDayId ?? "";
+  const safeMinistryId = ministryId ?? "";
+  const safeServiceLabel = (serviceLabel ?? "").trim();
 
-    async function loadSchedule() {
-        if (!serviceDayId || !serviceLabel || !ministryId) return;
+  /* =========================
+     LOAD
+  ========================= */
 
-        const [p, m, existing] = await Promise.all([
-            listPeople(),
-            listMinistries(),
-            getScheduleByService({
-                serviceDayId,
-                serviceLabel,
-                ministryId,
-            }),
-        ]);
+  async function loadSchedule() {
+    // 🔒 sem esses 3, não tem como identificar a escala corretamente
+    if (!safeServiceDayId || !safeMinistryId || !safeServiceLabel) return;
 
-        setPeople(p.filter((x) => x.active));
-        setMinistries(m.filter((x) => x.active));
+    const [p, m, existingThisTurn, allSameDay] = await Promise.all([
+      listPeople(),
+      listMinistries(),
+      getScheduleByService({
+        serviceDayId: safeServiceDayId,
+        ministryId: safeMinistryId,
+        serviceLabel: safeServiceLabel,
+      }),
+      listSchedulesByServiceDay({ serviceDayId: safeServiceDayId }),
+    ]);
 
-        if (existing) {
-            setAssigned(
-                existing.people.map((p) => ({
-                    personId: p.personId,
-                    ministryId,
-                }))
-            );
-            setScheduleStatus(existing.status);
-        } else {
-            setAssigned([]);
-            setScheduleStatus("empty");
-        }
+    setPeople(p.filter((x) => x.active));
+    setMinistries(m.filter((x) => x.active));
+
+    // carrega a escala do turno atual
+    if (existingThisTurn) {
+      setAssigned(existingThisTurn.assignments ?? []);
+      setScheduleStatus(existingThisTurn.status);
+    } else {
+      setAssigned([]);
+      setScheduleStatus("empty");
     }
 
-    useFocusEffect(
-        useCallback(() => {
-            loadSchedule();
-        }, [serviceDayId, serviceLabel, ministryId])
+    // monta mapa de conflitos por pessoa (mesmo dia)
+    const map = new Map<string, ConflictInfo[]>();
+
+    (allSameDay ?? []).forEach((s: Schedule) => {
+      const infos: ConflictInfo = {
+        status: s.status,
+        ministryId: s.ministryId,
+        serviceLabel: s.serviceLabel,
+      };
+
+      (s.assignments ?? []).forEach((a) => {
+        const prev = map.get(a.personId) ?? [];
+        prev.push(infos);
+        map.set(a.personId, prev);
+      });
+    });
+
+    setConflictsByPerson(map);
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSchedule();
+      // ✅ depende também do turno
+    }, [safeServiceDayId, safeMinistryId, safeServiceLabel])
+  );
+
+  const currentMinistry = useMemo(
+    () => ministries.find((m) => m.id === safeMinistryId),
+    [ministries, safeMinistryId]
+  );
+
+  /* =========================
+     RULES
+  ========================= */
+
+  const assignedForThisTurn = useMemo(() => {
+    // aqui, assigned já vem com ministryId, mas garantimos só por segurança
+    return (assigned ?? []).filter((x) => x.ministryId === safeMinistryId);
+  }, [assigned, safeMinistryId]);
+
+  const unavailablePersonIds = useMemo(() => {
+    return assignedForThisTurn.map((a) => a.personId);
+  }, [assignedForThisTurn]);
+
+  function buildWarnings(personId: string): {
+    blocked: boolean;
+    warningsText: string[];
+  } {
+    const infos = conflictsByPerson.get(personId) ?? [];
+
+    // remove o "conflito" do próprio turno/ministério atual (não faz sentido avisar dele mesmo)
+    const relevant = infos.filter(
+      (i) => !(i.ministryId === safeMinistryId && i.serviceLabel === safeServiceLabel)
     );
 
-    const currentMinistry = ministries.find(
-        (m) => m.id === ministryId
+    let blocked = false;
+    const warningsText: string[] = [];
+
+    // A) outro ministério no mesmo dia
+    const otherMinistryPublished = relevant.some(
+      (i) => i.ministryId !== safeMinistryId && i.status === "published"
+    );
+    const otherMinistryDraft = relevant.some(
+      (i) => i.ministryId !== safeMinistryId && i.status === "draft"
     );
 
-    /* =========================
-       RULE 1
-    ========================= */
-
-    const unavailablePersonIds = useMemo(
-        () => assigned.map((a) => a.personId),
-        [assigned]
-    );
-
-    const availablePeople = useMemo(() => {
-        if (!ministryId) return [];
-
-        return people
-            .filter((p) =>
-                p.ministries.some(
-                    (m) => m.ministryId === ministryId
-                )
-            )
-            .filter(
-                (p) => !unavailablePersonIds.includes(p.id)
-            )
-            .sort((a, b) =>
-                a.name.localeCompare(b.name, "pt-BR")
-            );
-    }, [people, ministryId, unavailablePersonIds]);
-
-    /* =========================
-       ACTIONS
-    ========================= */
-
-    function assignPerson(person: Person) {
-        if (!ministryId) return;
-
-        setAssigned((prev) => [
-            ...prev,
-            { personId: person.id, ministryId },
-        ]);
+    if (otherMinistryPublished) {
+      blocked = true; // 🔥 regra: published em outro ministério -> some da lista
+    } else if (otherMinistryDraft) {
+      warningsText.push("⚠️ Em rascunho em outro ministério hoje");
     }
 
-    function removePerson(personId: string) {
-        setAssigned((prev) =>
-            prev.filter((x) => x.personId !== personId)
-        );
+    // B) outro turno no mesmo dia (qualquer ministério)
+    const otherTurn = relevant.some((i) => i.serviceLabel !== safeServiceLabel);
+    if (otherTurn) {
+      warningsText.push("ℹ️ Já escalado em outro turno hoje");
     }
 
-    const assignedForThisMinistry = assigned.filter(
-        (x) => x.ministryId === ministryId
-    );
+    return { blocked, warningsText };
+  }
 
-    async function handleSaveDraft() {
-        if (!serviceDayId || !serviceLabel || !ministryId) {
-            return;
-        }
+  const availablePeople = useMemo(() => {
+    if (!safeMinistryId) return [];
 
-        await saveScheduleDraft({
-            serviceDayId,
-            serviceLabel,
-            ministryId,
-            people: assignedForThisMinistry.map((a) => {
-                const person = people.find(
-                    (p) => p.id === a.personId
-                );
-                return {
-                    personId: a.personId,
-                    name: person?.name ?? "",
-                };
-            }),
-        });
+    const base = people
+      .filter((p) => p.ministries.some((m) => m.ministryId === safeMinistryId))
+      .filter((p) => !unavailablePersonIds.includes(p.id));
 
-        setShowSavedModal(true);
-    }
+    const enriched: PersonWithFlags[] = base.map((p) => {
+      const { blocked, warningsText } = buildWarnings(p.id);
+      return {
+        ...p,
+        blocked,
+        warningsText,
+        warnDraftOtherMinistry: warningsText.some((t) => t.includes("rascunho")),
+        warnOtherTurn: warningsText.some((t) => t.includes("outro turno")),
+      };
+    });
 
-    async function handlePublish() {
-        if (!serviceDayId || !serviceLabel || !ministryId) return;
+    return enriched
+      .filter((p) => !p.blocked)
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }, [people, safeMinistryId, unavailablePersonIds, conflictsByPerson]);
 
-        await publishSchedule({
-            serviceDayId,
-            serviceLabel,
-            ministryId,
-        });
+  /* =========================
+     ACTIONS
+  ========================= */
 
-        setScheduleStatus("published");
-        setShowPublishModal(false);
-        router.push({
-            pathname: "/(protected)/(leader)/schedule"
-        })
-    }
+  function assignPerson(person: Person) {
+    if (!safeMinistryId) return;
 
-    /* =========================
-       RENDER
-    ========================= */
+    setAssigned((prev) => [
+      ...(prev ?? []),
+      { personId: person.id, ministryId: safeMinistryId },
+    ]);
+  }
 
-    return (
-        <AppScreen>
-            <AppHeader
-                title={currentMinistry?.name ?? "Escala"}
-                subtitle={`${name ?? ""} · Líder`}
-                onLogout={logout}
-            />
+  function removePerson(personId: string) {
+    setAssigned((prev) => (prev ?? []).filter((x) => x.personId !== personId));
+  }
 
-            <ScrollView>
-                <View style={styles.container}>
-                    <Text style={styles.sectionInfo}>
-                        Escala para: {serviceLabel} {date}
-                    </Text>
-                    <View
-                        style={[
-                            styles.statusBadge,
-                            scheduleStatus === "published" && styles.statusPublished,
-                            scheduleStatus === "draft" && styles.statusDraft,
-                            scheduleStatus === "empty" && styles.statusEmpty,
-                        ]}
-                    >
-                        <Text style={styles.statusText}>
-                            {scheduleStatus === "published"
-                                ? "Escala publicada"
-                                : scheduleStatus === "draft"
-                                    ? "Rascunho"
-                                    : "Nenhuma escala criada"}
-                        </Text>
-                    </View>
-                    <Text style={styles.sectionTitle}>
-                        Pessoas escaladas
-                    </Text>
+  async function handleSaveDraft() {
+    if (!user) return;
+    if (!safeServiceDayId || !safeMinistryId || !safeServiceLabel || !date) return;
 
-                    {assignedForThisMinistry.length === 0 ? (
-                        <Text style={styles.empty}>
-                            Nenhuma pessoa escalada ainda
-                        </Text>
-                    ) : (
-                        assignedForThisMinistry.map((a) => {
-                            const person = people.find(
-                                (p) => p.id === a.personId
-                            );
-                            if (!person) return null;
+    await saveScheduleDraft({
+      ministryId: safeMinistryId,
+      serviceDayId: safeServiceDayId,
+      serviceLabel: safeServiceLabel,
+      serviceDate: date,
+      assignments: assignedForThisTurn,
+      createdBy: user.personId,
+    });
 
-                            return (
-                                <View key={a.personId} style={styles.card}>
-                                    <Text style={styles.name}>
-                                        {person.name}
-                                    </Text>
-                                    <Pressable
-                                        onPress={() =>
-                                            removePerson(person.id)
-                                        }
-                                    >
-                                        <Text style={styles.remove}>
-                                            Remover
-                                        </Text>
-                                    </Pressable>
-                                </View>
-                            );
-                        })
-                    )}
+    setScheduleStatus("draft");
+    setShowSavedModal(true);
 
-                    <Pressable
-                        style={styles.saveBtn}
-                        onPress={handleSaveDraft}
-                    >
-                        <Text style={styles.saveText}>
-                            Salvar como rascunho
-                        </Text>
-                    </Pressable>
-                    {scheduleStatus === "draft" && (
-                        <Pressable
-                            style={styles.publishBtn}
-                            onPress={() => setShowPublishModal(true)}
-                        >
-                            <Text style={styles.publishText}>
-                                Publicar escala
-                            </Text>
-                        </Pressable>
-                    )}
+    // 🔥 recarrega conflitos e status
+    await loadSchedule();
+  }
 
-                    <Text style={styles.sectionTitle}>
-                        Pessoas disponíveis
-                    </Text>
+  async function handlePublish() {
+    if (!safeServiceDayId || !safeMinistryId || !safeServiceLabel) return;
 
-                    {availablePeople.map((p) => (
-                        <Pressable
-                            key={p.id}
-                            style={styles.card}
-                            onPress={() => assignPerson(p)}
-                        >
-                            <Text style={styles.name}>{p.name}</Text>
-                            <Text style={styles.add}>Adicionar</Text>
-                        </Pressable>
-                    ))}
+    await publishSchedule({
+      ministryId: safeMinistryId,
+      serviceDayId: safeServiceDayId,
+      serviceLabel: safeServiceLabel,
+    });
+
+    setScheduleStatus("published");
+    setShowPublishModal(false);
+
+    router.push({
+      pathname: "/(protected)/(leader)/schedule",
+    });
+  }
+
+  /* =========================
+     RENDER
+  ========================= */
+
+  return (
+    <AppScreen>
+      <AppHeader
+        title={currentMinistry?.name ?? "Escala"}
+        subtitle={`${name ?? ""} · Líder`}
+        onLogout={logout}
+      />
+
+      <ScrollView>
+        <View style={styles.container}>
+          <Text style={styles.sectionInfo}>
+            Escala para: {safeServiceLabel} {date}
+          </Text>
+
+          <View
+            style={[
+              styles.statusBadge,
+              scheduleStatus === "published" && styles.statusPublished,
+              scheduleStatus === "draft" && styles.statusDraft,
+              scheduleStatus === "empty" && styles.statusEmpty,
+            ]}
+          >
+            <Text style={styles.statusText}>
+              {scheduleStatus === "published"
+                ? "Escala publicada"
+                : scheduleStatus === "draft"
+                  ? "Rascunho"
+                  : "Nenhuma escala criada"}
+            </Text>
+          </View>
+
+          <Text style={styles.sectionTitle}>Pessoas escaladas</Text>
+
+          {assignedForThisTurn.length === 0 ? (
+            <Text style={styles.empty}>Nenhuma pessoa escalada ainda</Text>
+          ) : (
+            assignedForThisTurn.map((a) => {
+              const person = people.find((p) => p.id === a.personId);
+              if (!person) return null;
+
+              return (
+                <View key={a.personId} style={styles.card}>
+                  <Text style={styles.name}>{person.name}</Text>
+                  <Pressable onPress={() => removePerson(person.id)}>
+                    <Text style={styles.remove}>Remover</Text>
+                  </Pressable>
                 </View>
-                <Modal
-                    visible={showSavedModal}
-                    transparent
-                    animationType="fade"
-                >
-                    <View style={styles.overlay}>
-                        <View style={styles.modal}>
-                            <Text style={styles.modalTitle}>
-                                Escala salva
-                            </Text>
+              );
+            })
+          )}
 
-                            <Text style={styles.modalText}>
-                                A escala foi salva com sucesso como rascunho.
-                                Você pode continuar editando ou voltar depois.
-                            </Text>
+          <Pressable style={styles.saveBtn} onPress={handleSaveDraft}>
+            <Text style={styles.saveText}>Salvar como rascunho</Text>
+          </Pressable>
 
-                            <Pressable
-                                style={styles.modalBtn}
-                                onPress={async () => {
-                                    setShowSavedModal(false);
-                                    await loadSchedule(); // 🔥 força refresh
-                                }}
-                            >
-                                <Text style={styles.modalBtnText}>
-                                    Entendi
-                                </Text>
-                            </Pressable>
-                        </View>
-                    </View>
-                </Modal>
-                <Modal
-                    visible={showPublishModal}
-                    transparent
-                    animationType="fade"
-                >
-                    <View style={styles.overlay}>
-                        <View style={styles.modal}>
-                            <Text style={styles.modalTitle}>
-                                Publicar escala
-                            </Text>
+          {scheduleStatus === "draft" && (
+            <Pressable
+              style={styles.publishBtn}
+              onPress={() => setShowPublishModal(true)}
+            >
+              <Text style={styles.publishText}>Publicar escala</Text>
+            </Pressable>
+          )}
 
-                            <Text style={styles.modalText}>
-                                Após publicar, a escala ficará visível para os membros
-                                e não poderá ser editada.
-                            </Text>
+          <Text style={styles.sectionTitle}>Pessoas disponíveis</Text>
 
-                            <Pressable
-                                style={styles.modalPrimary}
-                                onPress={handlePublish}
-                            >
-                                <Text style={styles.modalPrimaryText}>
-                                    Confirmar publicação
-                                </Text>
-                            </Pressable>
+          {availablePeople.map((p) => (
+            <Pressable
+              key={p.id}
+              style={styles.card}
+              onPress={() => assignPerson(p)}
+            >
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={styles.name}>{p.name}</Text>
 
-                            <Pressable
-                                style={styles.modalSecondary}
-                                onPress={() => setShowPublishModal(false)}
-                            >
-                                <Text style={styles.modalSecondaryText}>
-                                    Cancelar
-                                </Text>
-                            </Pressable>
-                        </View>
-                    </View>
-                </Modal>
-            </ScrollView>
-        </AppScreen>
-    );
+                {p.warningsText && p.warningsText.length > 0 && (
+                  <View style={{ marginTop: 6 }}>
+                    {p.warningsText.map((w, idx) => (
+                      <Text key={idx} style={styles.warning}>
+                        {w}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              <Text style={styles.add}>Adicionar</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {/* MODAIS */}
+        <Modal visible={showSavedModal} transparent animationType="fade">
+          <View style={styles.overlay}>
+            <View style={styles.modal}>
+              <Text style={styles.modalTitle}>Escala salva</Text>
+              <Text style={styles.modalText}>
+                A escala foi salva como rascunho.
+              </Text>
+              <Pressable
+                style={styles.modalBtn}
+                onPress={() => setShowSavedModal(false)}
+              >
+                <Text style={styles.modalBtnText}>Entendi</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={showPublishModal} transparent animationType="fade">
+          <View style={styles.overlay}>
+            <View style={styles.modal}>
+              <Text style={styles.modalTitle}>Publicar escala</Text>
+              <Text style={styles.modalText}>
+                Após publicar, não será possível editar.
+              </Text>
+
+              <Pressable style={styles.modalPrimary} onPress={handlePublish}>
+                <Text style={styles.modalPrimaryText}>
+                  Confirmar publicação
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.modalSecondary}
+                onPress={() => setShowPublishModal(false)}
+              >
+                <Text style={styles.modalSecondaryText}>Cancelar</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      </ScrollView>
+    </AppScreen>
+  );
 }
 
 /* =========================
@@ -365,167 +414,92 @@ export default function LeaderGenerateSchedule() {
 ========================= */
 
 const styles = StyleSheet.create({
-    container: {
-        padding: 16,
-    },
+  container: { padding: 16 },
+  sectionTitle: { fontWeight: "800", marginTop: 16, marginBottom: 8 },
+  sectionInfo: { fontWeight: "900", marginBottom: 8 },
+  empty: { fontSize: 13, color: "#6B7280" },
 
-    info: {
-        fontSize: 13,
-        color: "#374151",
-        marginBottom: 16,
-    },
+  card: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  name: { fontWeight: "700" },
 
-    sectionTitle: {
-        fontWeight: "800",
-        marginTop: 16,
-        marginBottom: 8,
-    },
-    sectionInfo: {
-        fontWeight: "900",
-        marginTop: 8,
-        marginBottom: 8,
-        fontSize: 15,
-        color: "#ff0000",
-    },
+  warning: {
+    fontSize: 12,
+    color: "#6B7280",
+    fontWeight: "700",
+  },
 
-    empty: {
-        fontSize: 13,
-        color: "#6B7280",
-        marginBottom: 8,
-    },
+  add: { color: "#2563EB", fontWeight: "800" },
+  remove: { color: "#DC2626", fontWeight: "800" },
 
-    card: {
-        backgroundColor: "#F9FAFB",
-        borderRadius: 12,
-        padding: 14,
-        marginBottom: 8,
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-    },
+  saveBtn: {
+    marginTop: 20,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: "#111827",
+    alignItems: "center",
+  },
+  saveText: { color: "#FFF", fontWeight: "800" },
 
-    name: {
-        fontWeight: "700",
-    },
+  publishBtn: {
+    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: "#16A34A",
+    alignItems: "center",
+  },
+  publishText: { color: "#FFF", fontWeight: "800" },
 
-    add: {
-        color: "#2563EB",
-        fontWeight: "800",
-    },
+  statusBadge: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    alignSelf: "flex-start",
+    marginBottom: 8,
+  },
+  statusPublished: { backgroundColor: "#DCFCE7" },
+  statusDraft: { backgroundColor: "#FEF3C7" },
+  statusEmpty: { backgroundColor: "#E5E7EB" },
+  statusText: { fontWeight: "800", fontSize: 12 },
 
-    remove: {
-        color: "#DC2626",
-        fontWeight: "800",
-    },
-    saveBtn: {
-        marginTop: 20,
-        paddingVertical: 14,
-        borderRadius: 14,
-        backgroundColor: "#111827",
-        alignItems: "center",
-    },
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modal: {
+    width: "85%",
+    backgroundColor: "#FFF",
+    borderRadius: 20,
+    padding: 20,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "900" },
+  modalText: { fontSize: 14, marginBottom: 20 },
+  modalBtn: {
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: "#111827",
+    alignItems: "center",
+  },
+  modalBtnText: { color: "#FFF", fontWeight: "800" },
 
-    saveText: {
-        color: "#FFFFFF",
-        fontWeight: "800",
-    },
-    overlay: {
-        flex: 1,
-        backgroundColor: "rgba(0,0,0,0.45)",
-        justifyContent: "center",
-        alignItems: "center",
-    },
+  modalPrimary: {
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: "#16A34A",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  modalPrimaryText: { color: "#FFF", fontWeight: "800" },
 
-    modal: {
-        width: "85%",
-        backgroundColor: "#FFFFFF",
-        borderRadius: 20,
-        padding: 20,
-    },
-
-    modalTitle: {
-        fontSize: 18,
-        fontWeight: "900",
-        marginBottom: 8,
-        color: "#111827",
-    },
-
-    modalText: {
-        fontSize: 14,
-        color: "#374151",
-        marginBottom: 20,
-    },
-
-    modalBtn: {
-        paddingVertical: 14,
-        borderRadius: 14,
-        backgroundColor: "#111827",
-        alignItems: "center",
-    },
-
-    modalBtnText: {
-        color: "#FFFFFF",
-        fontWeight: "800",
-    },
-    statusBadge: {
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: 12,
-        alignSelf: "flex-start",
-        marginBottom: 8,
-    },
-
-    statusPublished: {
-        backgroundColor: "#DCFCE7",
-    },
-
-    statusDraft: {
-        backgroundColor: "#FEF3C7",
-    },
-
-    statusEmpty: {
-        backgroundColor: "#E5E7EB",
-    },
-
-    statusText: {
-        fontWeight: "800",
-        fontSize: 12,
-        color: "#111827",
-    },
-    publishBtn: {
-        marginTop: 12,
-        paddingVertical: 14,
-        borderRadius: 14,
-        backgroundColor: "#16A34A",
-        alignItems: "center",
-    },
-
-    publishText: {
-        color: "#FFFFFF",
-        fontWeight: "800",
-    },
-
-    modalPrimary: {
-        paddingVertical: 14,
-        borderRadius: 14,
-        backgroundColor: "#16A34A",
-        alignItems: "center",
-        marginBottom: 8,
-    },
-
-    modalPrimaryText: {
-        color: "#FFFFFF",
-        fontWeight: "800",
-    },
-
-    modalSecondary: {
-        paddingVertical: 12,
-        alignItems: "center",
-    },
-
-    modalSecondaryText: {
-        color: "#6B7280",
-        fontWeight: "700",
-    },
-
+  modalSecondary: { paddingVertical: 12, alignItems: "center" },
+  modalSecondaryText: { color: "#6B7280", fontWeight: "700" },
 });

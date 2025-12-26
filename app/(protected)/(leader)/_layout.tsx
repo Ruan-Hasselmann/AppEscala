@@ -29,7 +29,7 @@ export default function LeaderLayout() {
       <Tabs.Screen
         name="schedule"
         options={{
-          title: "Escala",
+          title: "Gerar escala",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="calendar-outline" size={size} color={color} />
           ),
