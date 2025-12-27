@@ -1,56 +1,200 @@
+// app/(protected)/(admin)/dashboard.tsx
+
 import { AppHeader } from "@/src/components/AppHeader";
 import { AppScreen } from "@/src/components/AppScreen";
-import { CalendarDashboard, CalendarDayData } from "@/src/components/CalendarDashboard";
+import {
+  CalendarDashboard,
+  CalendarDayData,
+  CalendarServiceStatus,
+} from "@/src/components/CalendarDashboard";
+import { DayOverviewModal } from "@/src/components/DayOverviewModal";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { getMockCalendarData } from "@/src/mocks/calendarMock";
+
+import { listMinistries, Ministry } from "@/src/services/ministries";
+import { listPeople } from "@/src/services/people";
+import { listSchedulesByMonth } from "@/src/services/schedules";
 import { getServiceDaysByMonth, ServiceDay } from "@/src/services/serviceDays";
 import { getServicesByServiceDay } from "@/src/services/services";
+
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { Dimensions, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-async function mapToCalendarData(
-  serviceDays: ServiceDay[]
-): Promise<CalendarDayData[]> {
-  const result: CalendarDayData[] = [];
+/* =========================
+   HELPERS
+========================= */
 
-  for (const day of serviceDays) {
-    const services = await getServicesByServiceDay(day.id);
+async function mapAdminCalendarData(params: {
+  serviceDays: ServiceDay[];
+  ministries: Ministry[];
+}): Promise<CalendarDayData[]> {
+  const { serviceDays, ministries } = params;
 
-    result.push({
-      date: day.date,
-      services: services.map((s) => ({
-        label: s.label,
-        status: "pending", // depois vira published/draft
-      })),
-    });
+  if (serviceDays.length === 0 || ministries.length === 0) {
+    return [];
   }
 
-  return result;
+  const serviceDayIds = serviceDays.map((d) => d.id);
+
+  /* =========================
+     BUSCA TODAS AS PESSOAS
+  ========================= */
+
+  const people = await listPeople();
+  const peopleIndex = new Map(
+    people.map((p) => [p.id, p])
+  );
+
+  /* =========================
+     BUSCA TODAS AS ESCALAS
+  ========================= */
+
+  const schedulesByMinistry = await Promise.all(
+    ministries.map((m) =>
+      listSchedulesByMonth({
+        ministryId: m.id,
+        serviceDayIds,
+      })
+    )
+  );
+
+  const schedules = schedulesByMinistry.flat();
+
+  /* =========================
+     INDEX POR DIA + TURNO + MINISTÉRIO
+  ========================= */
+
+  const scheduleIndex = new Map<
+    string,
+    {
+      status: CalendarServiceStatus;
+      people: { name: string; role: string }[];
+    }
+  >();
+
+  schedules.forEach((s) => {
+    const key = `${s.serviceDayId}__${s.serviceLabel}__${s.ministryId}`;
+
+    const people =
+      s.assignments
+        ?.map((a) => {
+          const p = peopleIndex.get(a.personId);
+          if (!p) return null;
+
+          return {
+            name: p.name,
+            role: "Membro",
+          };
+        })
+        .filter(
+          (p): p is { name: string; role: string } => p !== null
+        ) ?? [];
+
+    scheduleIndex.set(key, {
+      status: s.status,
+      people,
+    });
+  });
+
+  /* =========================
+     MONTA CALENDÁRIO FINAL
+  ========================= */
+
+  return Promise.all(
+    serviceDays.map(async (day) => {
+      const services = await getServicesByServiceDay(day.id);
+
+      return {
+        serviceDayId: day.id,
+        date: day.date,
+        services: services.flatMap((service) =>
+          ministries.map((ministry) => {
+            const key = `${day.id}__${service.label}__${ministry.id}`;
+            const found = scheduleIndex.get(key);
+
+            return {
+              turno: service.label,        // manhã / noite / custom
+              ministry: ministry.name,     // projeção / transmissão
+              status: found?.status ?? "empty",
+              people: found?.people,
+            };
+          })
+        ),
+      };
+    })
+  );
 }
 
-const { width } = Dimensions.get("window");
+/* =========================
+   SCREEN
+========================= */
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
-  const [month, setMonth] = useState(new Date());
-  const [calendarData, setCalendarData] = useState<
-    CalendarDayData[]
-  >([]);
 
-  async function loadDashboard() {
-    const days = await getServiceDaysByMonth(month);
-    const calendar = await mapToCalendarData(days);
-    setCalendarData(calendar);
+  const [month, setMonth] = useState(new Date());
+  const [calendarData, setCalendarData] =
+    useState<CalendarDayData[]>([]);
+  const [ministries, setMinistries] =
+    useState<Ministry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedDay, setSelectedDay] =
+    useState<CalendarDayData | null>(null);
+
+  /* =========================
+     LOAD BASE
+  ========================= */
+
+  async function loadBase() {
+    const m = await listMinistries();
+    setMinistries(m.filter((x) => x.active));
   }
 
-  const data = getMockCalendarData(month);
+  /* =========================
+     LOAD DASHBOARD
+  ========================= */
+
+  async function loadDashboard() {
+    if (ministries.length === 0) return;
+
+    setLoading(true);
+
+    const days = await getServiceDaysByMonth(month);
+
+    const calendar = await mapAdminCalendarData({
+      serviceDays: days,
+      ministries,
+    });
+
+    setCalendarData(calendar);
+    setLoading(false);
+  }
+
+  /* =========================
+     EFFECTS
+  ========================= */
+
+  useFocusEffect(
+    useCallback(() => {
+      loadBase();
+    }, [])
+  );
 
   useFocusEffect(
     useCallback(() => {
       loadDashboard();
-    }, [month])
+    }, [ministries, month])
   );
+
+  /* =========================
+     RENDER
+  ========================= */
 
   return (
     <AppScreen>
@@ -59,9 +203,10 @@ export default function AdminDashboard() {
         subtitle={`${user?.name} · Administrador`}
         onLogout={logout}
       />
+
       <ScrollView>
-        <View style={{ padding: 16 }}>
-          {/* HEADER DE MÊS */}
+        <View style={styles.container}>
+          {/* HEADER DO MÊS */}
           <View style={styles.monthHeader}>
             <Pressable
               onPress={() =>
@@ -100,14 +245,26 @@ export default function AdminDashboard() {
           </View>
 
           {/* CALENDÁRIO */}
-          <View style={styles.calendarWrapper}>
+          {loading ? (
+            <Text style={styles.loading}>
+              Carregando calendário...
+            </Text>
+          ) : (
             <CalendarDashboard
               month={month}
               data={calendarData}
+              onDayPress={(day) => setSelectedDay(day)}
             />
-          </View>
+          )}
         </View>
       </ScrollView>
+
+      {/* MODAL DO DIA (ADMIN) */}
+      <DayOverviewModal
+        visible={!!selectedDay}
+        day={selectedDay}
+        onClose={() => setSelectedDay(null)}
+      />
     </AppScreen>
   );
 }
@@ -123,120 +280,26 @@ const styles = StyleSheet.create({
 
   monthHeader: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 12,
   },
+
   monthTitle: {
     fontSize: 18,
     fontWeight: "800",
     textTransform: "capitalize",
   },
+
   nav: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: "800",
   },
 
-  weekRow: {
-    flexDirection: "row",
-    marginBottom: 8,
-  },
-  weekDay: {
-    flex: 1,
+  loading: {
     textAlign: "center",
+    marginTop: 40,
     fontWeight: "700",
     color: "#6B7280",
-  },
-
-  calendar: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-
-  empty: {
-    width: "14.2857%",
-    aspectRatio: 1,
-  },
-
-  dayCell: {
-    width: "14.2857%",
-    aspectRatio: 1,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    marginBottom: 8,
-  },
-
-  today: {
-    borderColor: "#2563EB",
-    borderWidth: 2,
-  },
-
-  dayNumber: {
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  dotPublished: {
-    backgroundColor: "#22C55E",
-  },
-  dotDraft: {
-    backgroundColor: "#F59E0B",
-  },
-  dotPending: {
-    backgroundColor: "#EF4444",
-  },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "flex-end",
-  },
-  modal: {
-    backgroundColor: "#FFFFFF",
-    padding: 20,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    marginBottom: 12,
-    textTransform: "capitalize",
-  },
-  service: {
-    marginBottom: 12,
-  },
-  serviceTitle: {
-    fontWeight: "700",
-  },
-  person: {
-    fontSize: 14,
-    color: "#374151",
-  },
-  close: {
-    marginTop: 16,
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: "#111827",
-    alignItems: "center",
-  },
-  closeText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-  },
-  calendarWrapper: {
-    alignSelf: "center",
-    width: Platform.OS === "web"
-      ? Math.min(800, width * 0.9)
-      : "100%",
   },
 });

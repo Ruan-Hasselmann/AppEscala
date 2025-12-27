@@ -8,13 +8,8 @@ export default function AdminLayout() {
                 headerShown: false,
                 tabBarActiveTintColor: "#2563EB",
                 tabBarInactiveTintColor: "#6B7280",
-                tabBarStyle: {
-                    height: 80,
-                    paddingBottom: 6,
-                    paddingTop: 6,
-                },
                 tabBarLabelStyle: {
-                    fontSize: 12,
+                    fontSize: 10,
                     fontWeight: "600",
                 },
             }}

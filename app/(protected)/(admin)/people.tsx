@@ -1,6 +1,6 @@
-import { PersonManageModal } from "@/src/components/admin/PersonManageModal";
 import { AppHeader } from "@/src/components/AppHeader";
 import { AppScreen } from "@/src/components/AppScreen";
+import { PersonManageModal } from "@/src/components/PersonManageModal";
 import { useAuth } from "@/src/contexts/AuthContext";
 
 import { listMinistries, Ministry } from "@/src/services/ministries";

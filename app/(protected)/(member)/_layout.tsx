@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
-export default function LeaderLayout() {
+export default function MemberLayout() {
   return (
     <Tabs
       screenOptions={{
@@ -25,25 +25,26 @@ export default function LeaderLayout() {
         }}
       />
 
-      {/* Escala */}
+      {/* Disponibilidade */}
       <Tabs.Screen
-        name="schedule"
+        name="availability"
         options={{
-          title: "Gerar escala",
+          title: "Disponibilidade",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="calendar-outline" size={size} color={color} />
           ),
         }}
       />
-
-      {/* Escala */}
+      {/* Confirmação */}
       <Tabs.Screen
-        name="schedule/generate"
+        name="schedule"
         options={{
-          href: null,
+          title: "Presença",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="checkbox-outline" size={size} color={color} />
+          ),
         }}
       />
-
     </Tabs>
   );
 }

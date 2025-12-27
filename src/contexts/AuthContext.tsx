@@ -9,19 +9,19 @@ import {
 
 import { createPerson, getPersonById } from "@/src/services/authPeople";
 import { auth } from "@/src/services/firebase";
-import { SYSTEM_ROLE_LABEL, SystemRole } from "../constants/role";
+
+import { SystemRole } from "../constants/role";
 
 /* =========================
    TYPES
 ========================= */
-
-export { SYSTEM_ROLE_LABEL, SystemRole };
 
 export type AppUser = {
   uid: string;
   email: string;
   name: string;
   role: SystemRole;
+  personId: string;
 };
 
 type RegisterInput = {
@@ -36,9 +36,14 @@ type AuthContextType = {
   login: (email: string, password: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
+
+/* =========================
+   PROVIDER
+========================= */
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
@@ -46,8 +51,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (firebaseUser) => {
-      console.log("AUTH STATE CHANGED:", firebaseUser?.uid);
-
       if (!firebaseUser) {
         setUser(null);
         setLoading(false);
@@ -58,17 +61,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const person = await waitForPerson(firebaseUser.uid);
 
         if (!person) {
-          console.warn("⚠️ Pessoa ainda não existe no Firestore");
           setUser(null);
           setLoading(false);
           return;
         }
 
+        // 🔐 REGRA DE PAPEL DO SISTEMA
+        const systemRole = resolveSystemRole(person);
+
         setUser({
           uid: person.uid,
           email: person.email,
           name: person.name,
-          role: person.role,
+          role: systemRole,
+          personId: person.id,
         });
       } catch (err) {
         console.error("Erro ao carregar perfil:", err);
@@ -81,6 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsub();
   }, []);
 
+  /* =========================
+     ACTIONS
+  ========================= */
+
   async function login(email: string, password: string) {
     await auth.signInWithEmailAndPassword(
       email.trim().toLowerCase(),
@@ -92,17 +102,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const cleanName = name.trim();
     const cleanEmail = email.trim().toLowerCase();
 
-    const cred = await auth.createUserWithEmailAndPassword(cleanEmail, password);
+    const cred = await auth.createUserWithEmailAndPassword(
+      cleanEmail,
+      password
+    );
+
     if (!cred.user) return;
 
     await cred.user.updateProfile({ displayName: cleanName });
 
-    // ✅ cria Person imediatamente (evita usuário fantasma)
     await createPerson({
       uid: cred.user.uid,
       name: cleanName,
       email: cleanEmail,
-      role: "member",
+      role: "member", // 🔥 SEMPRE MEMBER NA CRIAÇÃO
     });
   }
 
@@ -113,12 +126,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ) {
     for (let i = 0; i < retries; i++) {
       const person = await getPersonById(uid);
-
       if (person) return person;
-
       await new Promise((res) => setTimeout(res, delay));
     }
-
     return null;
   }
 
@@ -127,12 +137,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  async function refreshUser() {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return;
+
+    const person = await getPersonById(firebaseUser.uid);
+    if (!person) return;
+
+    setUser({
+      uid: person.uid,
+      email: person.email,
+      name: person.name,
+      role: person.role,
+      personId: person.id,
+    });
+  }
+
+  function resolveSystemRole(person: any): SystemRole {
+    // 🔒 Admin nunca perde privilégio
+    if (person.role === "admin") {
+      return "admin";
+    }
+
+    // 🔥 Se for líder em QUALQUER ministério → leader
+    const isLeader = person.ministries?.some(
+      (m: any) => m.role === "leader"
+    );
+
+    if (isLeader) {
+      return "leader";
+    }
+
+    return "member";
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, register, logout, refreshUser }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
+
+/* =========================
+   HOOK
+========================= */
 
 export function useAuth() {
   return useContext(AuthContext);
