@@ -26,10 +26,16 @@ export type CalendarDayData = {
     turno: string;
     ministry: string;
     status: CalendarServiceStatus;
+    attendanceSummary?: {
+      declined: number;
+      pending: number;
+      confirmed: number;
+    };
     people?: {
       id?: string;
       name: string;
       role: string;
+      attendance?: "pending" | "confirmed" | "declined";
     }[];
   }[];
 };
@@ -72,9 +78,6 @@ function getCalendarMatrix(year: number, month: number) {
   return days;
 }
 
-/**
- * Status consolidado do dia
- */
 function getDayStatus(
   services: CalendarDayData["services"]
 ): CalendarServiceStatus {
@@ -90,6 +93,12 @@ function getDayStatus(
   if (published > 0) return "partial";
   if (draft > 0) return "draft";
   return "empty";
+}
+
+function hasDeclined(services: CalendarDayData["services"]) {
+  return services.some(
+    (s) => (s.attendanceSummary?.declined ?? 0) > 0
+  );
 }
 
 /* =========================
@@ -143,6 +152,10 @@ export function CalendarDashboard({
             ? getDayStatus(dayData.services)
             : "empty";
 
+          const declined = dayData
+            ? hasDeclined(dayData.services)
+            : false;
+
           return (
             <Pressable
               key={date.toISOString()}
@@ -162,13 +175,15 @@ export function CalendarDashboard({
                   <View
                     style={[
                       styles.dot,
-                      status === "published"
-                        ? styles.dotPublished
-                        : status === "partial"
-                          ? styles.dotPartial
-                          : status === "draft"
-                            ? styles.dotDraft
-                            : styles.dotEmpty,
+                      declined
+                        ? styles.dotDeclined
+                        : status === "published"
+                          ? styles.dotPublished
+                          : status === "partial"
+                            ? styles.dotPartial
+                            : status === "draft"
+                              ? styles.dotDraft
+                              : styles.dotEmpty,
                     ]}
                   />
                 )}
@@ -179,23 +194,24 @@ export function CalendarDashboard({
                   <View
                     style={[
                       styles.badge,
-                      status === "published"
-                        ? styles.badgePublished
-                        : status === "partial"
-                          ? styles.badgePartial
-                          : status === "draft"
-                            ? styles.badgeDraft
-                            : styles.badgeEmpty,
+                      declined
+                        ? styles.badgeDeclined
+                        : status === "published"
+                          ? styles.badgePublished
+                          : status === "partial"
+                            ? styles.badgePartial
+                            : status === "draft"
+                              ? styles.badgeDraft
+                              : styles.badgeEmpty,
                     ]}
-                  >
-                  </View>
+                  />
                 )}
             </Pressable>
           );
         })}
       </View>
 
-      {/* MODAL (fallback quando não vem onDayPress) */}
+      {/* MODAL (fallback) */}
       <Modal
         visible={!!selectedDay}
         transparent
@@ -220,23 +236,23 @@ export function CalendarDashboard({
 
               {selectedDay?.services.map((s, i) => (
                 <View key={i} style={styles.service}>
-                  {/* Ministério */}
                   <Text style={styles.serviceTitle}>
                     {s.ministry} - {s.turno}
                   </Text>
-                  {/* STATUS — só se NÃO estiver publicado */}
-                  {s.status !== "published" && (
-                    <Text style={styles.serviceStatus}>
-                      {s.status === "draft"
-                        ? "📝 Escala em rascunho"
-                        : "⚠️ Sem escala"}
-                    </Text>
-                  )}
-                  {/* PESSOAS ESCALADAS */}
+
                   {s.people && s.people.length > 0 ? (
                     s.people.map((p, idx) => (
-                      <Text key={idx} style={styles.person}>
+                      <Text
+                        key={idx}
+                        style={[
+                          styles.person,
+                          p.attendance === "declined" &&
+                            styles.personDeclined,
+                        ]}
+                      >
                         • {p.name}
+                        {p.attendance === "declined" &&
+                          " (recusou)"}
                       </Text>
                     ))
                   ) : (
@@ -268,7 +284,12 @@ export function CalendarDashboard({
 ========================= */
 
 const styles = StyleSheet.create({
-  person: { fontWeight: "900"},
+  person: { fontWeight: "900" },
+  personDeclined: {
+    color: "#DC2626",
+    fontWeight: "900",
+  },
+
   weekRow: { flexDirection: "row", marginBottom: 8 },
   weekDay: {
     flex: 1,
@@ -300,30 +321,38 @@ const styles = StyleSheet.create({
   dotDraft: { backgroundColor: "#F59E0B" },
   dotPartial: { backgroundColor: "#F97316" },
   dotEmpty: { backgroundColor: "#D1D5DB" },
+  dotDeclined: { backgroundColor: "#DC2626" },
 
   badge: {
     minWidth: 18,
     height: 18,
     borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
   },
-  badgeText: { color: "#FFF", fontWeight: "800", fontSize: 12 },
   badgePublished: { backgroundColor: "#22C55E" },
   badgeDraft: { backgroundColor: "#F59E0B" },
   badgePartial: { backgroundColor: "#F97316" },
   badgeEmpty: { backgroundColor: "#9CA3AF" },
+  badgeDeclined: { backgroundColor: "#DC2626" },
 
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "center",
   },
-  modal: { backgroundColor: "#FFF", padding: 20, borderRadius: 20 },
-  modalTitle: { fontSize: 18, fontWeight: "800", marginBottom: 12 , textTransform: "capitalize",},
+  modal: {
+    backgroundColor: "#FFF",
+    padding: 20,
+    borderRadius: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 12,
+    textTransform: "capitalize",
+  },
+
   service: { marginBottom: 10 },
   serviceTitle: { fontWeight: "700" },
-  serviceStatus: { fontSize: 13, color: "#6B7280" },
 
   close: {
     marginTop: 16,
@@ -341,5 +370,4 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     marginTop: 2,
   },
-
 });

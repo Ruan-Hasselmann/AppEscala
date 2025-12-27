@@ -41,7 +41,6 @@ export default function LeaderDashboard() {
   const [selectedDay, setSelectedDay] = useState<CalendarDayData | null>(null);
   const [showDayModal, setShowDayModal] = useState(false);
 
-
   /* =========================
      PEOPLE INDEX
   ========================= */
@@ -105,7 +104,6 @@ export default function LeaderDashboard() {
 
     const serviceDayIds = days.map((d) => d.id);
 
-    // Busca escalas de todos os ministérios do líder
     const schedulesByMinistry = await Promise.all(
       leaderMinistries.map((m) =>
         listSchedulesByMonth({
@@ -117,13 +115,22 @@ export default function LeaderDashboard() {
 
     const schedules = schedulesByMinistry.flat();
 
-    // Indexa por DIA + MINISTÉRIO
     const scheduleIndex = new Map<
       string,
       {
         status: CalendarServiceStatus;
         ministryName: string;
-        people: { name: string; role: string }[];
+        people: {
+          id: string;
+          name: string;
+          role: string;
+          attendance: "pending" | "confirmed" | "declined";
+        }[];
+        attendanceSummary: {
+          declined: number;
+          pending: number;
+          confirmed: number;
+        };
       }
     >();
 
@@ -132,24 +139,33 @@ export default function LeaderDashboard() {
         (m) => m.id === s.ministryId
       );
 
-      const assignments =
-        s.assignments ??
-        s.people?.map((p: any) => ({
-          personId: p.personId,
-        })) ??
-        [];
+      const assignments = s.assignments ?? [];
 
       const people = assignments
-        .map((a: { personId: string }) => {
+        .map((a: any) => {
           const p = peopleIndex.get(a.personId);
           if (!p) return null;
 
           return {
+            id: p.id,
             name: p.name,
             role: "Membro",
+            attendance: a.attendance ?? "pending",
           };
         })
-        .filter(Boolean) as { name: string; role: string }[];
+        .filter(Boolean);
+
+      const attendanceSummary = {
+        declined: 0,
+        pending: 0,
+        confirmed: 0,
+      };
+
+      assignments.forEach((a: any) => {
+        if (a.attendance === "declined") attendanceSummary.declined++;
+        else if (a.attendance === "confirmed") attendanceSummary.confirmed++;
+        else attendanceSummary.pending++;
+      });
 
       scheduleIndex.set(
         `${s.serviceDayId}__${s.ministryId}__${s.serviceLabel}`,
@@ -157,13 +173,10 @@ export default function LeaderDashboard() {
           status: s.status,
           ministryName: ministry?.name ?? "Ministério",
           people,
+          attendanceSummary,
         }
       );
     });
-
-    /* =========================
-       MONTA CALENDÁRIO (COM TURNO)
-    ========================= */
 
     const calendar: CalendarDayData[] = await Promise.all(
       days.map(async (day) => {
@@ -178,12 +191,13 @@ export default function LeaderDashboard() {
               const found = scheduleIndex.get(key);
 
               return {
-                turno: service.label,          // 🔥 MANHÃ / NOITE
-                ministry: ministry.name,       // 🔥 PROJEÇÃO / TRANSMISSÃO
+                turno: service.label,
+                ministry: ministry.name,
                 status: found
                   ? found.status
                   : ("empty" as CalendarServiceStatus),
                 people: found?.people,
+                attendanceSummary: found?.attendanceSummary,
               };
             })
           ),
@@ -210,7 +224,6 @@ export default function LeaderDashboard() {
     setShowDayModal(true);
   }
 
-
   /* =========================
      RENDER
   ========================= */
@@ -225,7 +238,6 @@ export default function LeaderDashboard() {
 
       <ScrollView>
         <View style={styles.container}>
-          {/* HEADER DO MÊS */}
           <View style={styles.monthHeader}>
             <Pressable
               onPress={() =>
@@ -263,7 +275,6 @@ export default function LeaderDashboard() {
             </Pressable>
           </View>
 
-          {/* CALENDÁRIO */}
           <CalendarDashboard
             month={month}
             data={calendarData}
@@ -271,6 +282,7 @@ export default function LeaderDashboard() {
           />
         </View>
       </ScrollView>
+
       <DayOverviewModal
         visible={showDayModal}
         day={selectedDay}
@@ -289,20 +301,21 @@ export default function LeaderDashboard() {
 ========================= */
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-  },
+  container: { padding: 16 },
+
   monthHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
   },
+
   monthTitle: {
     fontSize: 18,
     fontWeight: "800",
     textTransform: "capitalize",
   },
+
   nav: {
     fontSize: 28,
     fontWeight: "800",

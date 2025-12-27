@@ -35,6 +35,16 @@ export default function MemberLayout() {
           ),
         }}
       />
+      {/* Confirmação */}
+      <Tabs.Screen
+        name="schedule"
+        options={{
+          title: "Presença",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="checkbox-outline" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

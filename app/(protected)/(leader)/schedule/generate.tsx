@@ -12,6 +12,7 @@ import {
   saveScheduleDraft,
   Schedule,
 } from "@/src/services/schedules";
+
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -40,10 +41,31 @@ type ConflictInfo = {
 
 type PersonWithFlags = Person & {
   blocked?: boolean;
-  warnDraftOtherMinistry?: boolean;
-  warnOtherTurn?: boolean;
   warningsText?: string[];
 };
+
+/* =========================
+   HELPERS
+========================= */
+
+function parseServiceDayDate(dateStr?: string): Date {
+  if (!dateStr) return new Date();
+
+  // tenta ISO (YYYY-MM-DD, etc)
+  const parsed = Date.parse(dateStr);
+  if (!Number.isNaN(parsed)) {
+    return new Date(parsed);
+  }
+
+  // fallback seguro (meio-dia evita bug de timezone)
+  const today = new Date();
+  return new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+    12
+  );
+}
 
 /* =========================
    SCREEN
@@ -64,14 +86,20 @@ export default function LeaderGenerateSchedule() {
   const [people, setPeople] = useState<Person[]>([]);
   const [ministries, setMinistries] = useState<Ministry[]>([]);
   const [assigned, setAssigned] = useState<AssignedPerson[]>([]);
-  const [showSavedModal, setShowSavedModal] = useState(false);
   const [scheduleStatus, setScheduleStatus] =
     useState<"draft" | "published" | "empty">("empty");
+
+  const [showSavedModal, setShowSavedModal] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
 
   const [conflictsByPerson, setConflictsByPerson] = useState<
     Map<string, ConflictInfo[]>
   >(new Map());
+
+  const [availablePersonIds, setAvailablePersonIds] = useState<Set<string>>(
+    new Set()
+  );
+
   const [errorModalVisible, setErrorModalVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -80,10 +108,6 @@ export default function LeaderGenerateSchedule() {
   const safeServiceLabel = (serviceLabel ?? "").trim();
 
   const isPublished = scheduleStatus === "published";
-  const [availablePersonIds, setAvailablePersonIds] = useState<Set<string>>(
-    new Set()
-  );
-
 
   /* =========================
      LOAD
@@ -113,12 +137,10 @@ export default function LeaderGenerateSchedule() {
       }),
     ]);
 
-    setAvailablePersonIds(
-      new Set(availability.map((a) => a.personId))
-    );
-
     setPeople(p.filter((x) => x.active));
     setMinistries(m.filter((x) => x.active));
+
+    setAvailablePersonIds(new Set(availability.map((a) => a.personId)));
 
     if (existingThisTurn) {
       setAssigned(existingThisTurn.assignments ?? []);
@@ -164,18 +186,12 @@ export default function LeaderGenerateSchedule() {
 
   const assignedForThisTurn = useMemo(
     () =>
-      (assigned ?? []).filter((x) => x.ministryId === safeMinistryId),
+      assigned.filter((x) => x.ministryId === safeMinistryId),
     [assigned, safeMinistryId]
-  );
-
-  const unavailablePersonIds = useMemo(
-    () => assignedForThisTurn.map((a) => a.personId),
-    [assignedForThisTurn]
   );
 
   function buildWarnings(personId: string) {
     const infos = conflictsByPerson.get(personId) ?? [];
-
     const relevant = infos.filter(
       (i) =>
         !(
@@ -190,74 +206,41 @@ export default function LeaderGenerateSchedule() {
     const otherMinistryPublished = relevant.some(
       (i) => i.ministryId !== safeMinistryId && i.status === "published"
     );
-    const otherMinistryDraft = relevant.some(
-      (i) => i.ministryId !== safeMinistryId && i.status === "draft"
-    );
 
     if (otherMinistryPublished) blocked = true;
-    else if (otherMinistryDraft)
+
+    if (relevant.some((i) => i.status === "draft")) {
       warningsText.push("⚠️ Em rascunho em outro ministério hoje");
-
-    const otherTurn = relevant.some(
-      (i) => i.serviceLabel !== safeServiceLabel
-    );
-    if (otherTurn)
-      warningsText.push("ℹ️ Já escalado em outro turno hoje");
-
-    return { blocked, warningsText };
-  }
-
-  function handleUserError(err: any) {
-    if (!err?.message) {
-      setErrorMessage("Ocorreu um erro inesperado.");
-    } else if (err.message === "CONFLICT_SAME_TURN") {
-      setErrorMessage(
-        "Essa pessoa já está escalada neste mesmo turno em outro ministério."
-      );
-    } else {
-      setErrorMessage("Não foi possível salvar a escala.");
     }
 
-    setErrorModalVisible(true);
+    if (relevant.some((i) => i.serviceLabel !== safeServiceLabel)) {
+      warningsText.push("ℹ️ Já escalado em outro turno hoje");
+    }
+
+    return { blocked, warningsText };
   }
 
   const availablePeople = useMemo(() => {
     if (!safeMinistryId) return [];
 
-    const base = people
-      // pertence ao ministério
+    return people
       .filter((p) =>
         p.ministries.some((m) => m.ministryId === safeMinistryId)
       )
-      // 🔥 marcou disponibilidade para o turno
       .filter((p) => availablePersonIds.has(p.id))
-      // não está escalado neste turno ainda
-      .filter((p) => !unavailablePersonIds.includes(p.id));
-
-    const enriched: PersonWithFlags[] = base.map((p) => {
-      const { blocked, warningsText } = buildWarnings(p.id);
-      return {
-        ...p,
-        blocked,
-        warningsText,
-        warnDraftOtherMinistry: warningsText.some((t) =>
-          t.includes("rascunho")
-        ),
-        warnOtherTurn: warningsText.some((t) =>
-          t.includes("outro turno")
-        ),
-      };
-    });
-
-    return enriched
+      .filter((p) => !assignedForThisTurn.some((a) => a.personId === p.id))
+      .map((p) => {
+        const { blocked, warningsText } = buildWarnings(p.id);
+        return { ...p, blocked, warningsText };
+      })
       .filter((p) => !p.blocked)
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [
     people,
     safeMinistryId,
-    unavailablePersonIds,
-    conflictsByPerson,
     availablePersonIds,
+    assignedForThisTurn,
+    conflictsByPerson,
   ]);
 
   /* =========================
@@ -265,10 +248,10 @@ export default function LeaderGenerateSchedule() {
   ========================= */
 
   function assignPerson(person: Person) {
-    if (isPublished || !safeMinistryId) return;
+    if (isPublished) return;
 
     setAssigned((prev) => [
-      ...(prev ?? []),
+      ...prev,
       { personId: person.id, ministryId: safeMinistryId },
     ]);
   }
@@ -277,8 +260,13 @@ export default function LeaderGenerateSchedule() {
     if (isPublished) return;
 
     setAssigned((prev) =>
-      (prev ?? []).filter((x) => x.personId !== personId)
+      prev.filter((x) => x.personId !== personId)
     );
+  }
+
+  function handleUserError() {
+    setErrorMessage("Não foi possível salvar a escala.");
+    setErrorModalVisible(true);
   }
 
   async function handleSaveDraft() {
@@ -298,6 +286,7 @@ export default function LeaderGenerateSchedule() {
         serviceDayId: safeServiceDayId,
         serviceLabel: safeServiceLabel,
         serviceDate: date,
+        serviceDayDate: parseServiceDayDate(date), // ✅ FIX DEFINITIVO
         assignments: assignedForThisTurn,
         createdBy: user.personId,
       });
@@ -305,8 +294,8 @@ export default function LeaderGenerateSchedule() {
       setScheduleStatus("draft");
       setShowSavedModal(true);
       await loadSchedule();
-    } catch (err) {
-      handleUserError(err);
+    } catch {
+      handleUserError();
     }
   }
 
@@ -321,8 +310,7 @@ export default function LeaderGenerateSchedule() {
 
     setScheduleStatus("published");
     setShowPublishModal(false);
-
-    router.push({ pathname: "/(protected)/(leader)/schedule" });
+    router.push("/(protected)/(leader)/schedule");
   }
 
   /* =========================
@@ -343,52 +331,23 @@ export default function LeaderGenerateSchedule() {
             Escala para: {safeServiceLabel} {date}
           </Text>
 
-          <View
-            style={[
-              styles.statusBadge,
-              scheduleStatus === "published" && styles.statusPublished,
-              scheduleStatus === "draft" && styles.statusDraft,
-              scheduleStatus === "empty" && styles.statusEmpty,
-            ]}
-          >
-            <Text style={styles.statusText}>
-              {scheduleStatus === "published"
-                ? "Escala publicada"
-                : scheduleStatus === "draft"
-                  ? "Rascunho"
-                  : "Nenhuma escala criada"}
-            </Text>
-          </View>
-
-          {isPublished && (
-            <View style={styles.lockedInfo}>
-              <Text style={styles.lockedText}>
-                🔒 Esta escala está publicada e não pode ser editada
-              </Text>
-            </View>
-          )}
-
           <Text style={styles.sectionTitle}>Pessoas escaladas</Text>
 
-          {assignedForThisTurn.length === 0 ? (
-            <Text style={styles.empty}>Nenhuma pessoa escalada ainda</Text>
-          ) : (
-            assignedForThisTurn.map((a) => {
-              const person = people.find((p) => p.id === a.personId);
-              if (!person) return null;
+          {assignedForThisTurn.map((a) => {
+            const person = people.find((p) => p.id === a.personId);
+            if (!person) return null;
 
-              return (
-                <View key={a.personId} style={styles.card}>
-                  <Text style={styles.name}>{person.name}</Text>
-                  {!isPublished && (
-                    <Pressable onPress={() => removePerson(person.id)}>
-                      <Text style={styles.remove}>Remover</Text>
-                    </Pressable>
-                  )}
-                </View>
-              );
-            })
-          )}
+            return (
+              <View key={a.personId} style={styles.card}>
+                <Text style={styles.name}>{person.name}</Text>
+                {!isPublished && (
+                  <Pressable onPress={() => removePerson(person.id)}>
+                    <Text style={styles.remove}>Remover</Text>
+                  </Pressable>
+                )}
+              </View>
+            );
+          })}
 
           {!isPublished && (
             <Pressable style={styles.saveBtn} onPress={handleSaveDraft}>
@@ -407,93 +366,74 @@ export default function LeaderGenerateSchedule() {
 
           <Text style={styles.sectionTitle}>Pessoas disponíveis</Text>
 
-          {!isPublished &&
-            availablePeople.map((p) => (
-              <Pressable
-                key={p.id}
-                style={styles.card}
-                onPress={() => assignPerson(p)}
-              >
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={styles.name}>{p.name}</Text>
-
-                  {p.warningsText && p.warningsText.length > 0 && (
-                    <View style={{ marginTop: 6 }}>
-                      {p.warningsText.map((w, idx) => (
-                        <Text key={idx} style={styles.warning}>
-                          {w}
-                        </Text>
-                      ))}
-                    </View>
-                  )}
-                </View>
-
-                <Text style={styles.add}>Adicionar</Text>
-              </Pressable>
-            ))}
+          {availablePeople.map((p) => (
+            <Pressable
+              key={p.id}
+              style={styles.card}
+              onPress={() => assignPerson(p)}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{p.name}</Text>
+                {p.warningsText?.map((w, i) => (
+                  <Text key={i} style={styles.warning}>{w}</Text>
+                ))}
+              </View>
+              <Text style={styles.add}>Adicionar</Text>
+            </Pressable>
+          ))}
         </View>
-
-        {/* MODAIS */}
-        <Modal visible={showSavedModal} transparent animationType="fade">
-          <View style={styles.overlay}>
-            <View style={styles.modal}>
-              <Text style={styles.modalTitle}>Escala salva</Text>
-              <Text style={styles.modalText}>
-                A escala foi salva como rascunho.
-              </Text>
-              <Pressable
-                style={styles.modalBtn}
-                onPress={() => setShowSavedModal(false)}
-              >
-                <Text style={styles.modalBtnText}>Entendi</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
-
-        <Modal visible={showPublishModal} transparent animationType="fade">
-          <View style={styles.overlay}>
-            <View style={styles.modal}>
-              <Text style={styles.modalTitle}>Publicar escala</Text>
-              <Text style={styles.modalText}>
-                Após publicar, não será possível editar.
-              </Text>
-
-              <Pressable style={styles.modalPrimary} onPress={handlePublish}>
-                <Text style={styles.modalPrimaryText}>
-                  Confirmar publicação
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={styles.modalSecondary}
-                onPress={() => setShowPublishModal(false)}
-              >
-                <Text style={styles.modalSecondaryText}>Cancelar</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
-
-        <Modal visible={errorModalVisible} transparent animationType="fade">
-          <View style={styles.overlay}>
-            <View style={styles.modal}>
-              <Text style={styles.modalTitle}>Atenção</Text>
-
-              <Text style={styles.modalText}>
-                {errorMessage}
-              </Text>
-
-              <Pressable
-                style={styles.modalBtn}
-                onPress={() => setErrorModalVisible(false)}
-              >
-                <Text style={styles.modalBtnText}>Entendi</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
       </ScrollView>
+
+      {/* MODAIS */}
+      <Modal visible={showSavedModal} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>Escala salva</Text>
+            <Pressable
+              style={styles.modalBtn}
+              onPress={() => setShowSavedModal(false)}
+            >
+              <Text style={styles.modalBtnText}>Entendi</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showPublishModal} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>Publicar escala</Text>
+
+            <Pressable style={styles.modalPrimary} onPress={handlePublish}>
+              <Text style={styles.modalPrimaryText}>
+                Confirmar publicação
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.modalSecondary}
+              onPress={() => setShowPublishModal(false)}
+            >
+              <Text style={styles.modalSecondaryText}>Cancelar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={errorModalVisible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>Atenção</Text>
+            <Text style={styles.modalText}>{errorMessage}</Text>
+            <Pressable
+              style={styles.modalBtn}
+              onPress={() => setErrorModalVisible(false)}
+            >
+              <Text style={styles.modalBtnText}>Entendi</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </AppScreen>
   );
 }
@@ -506,8 +446,6 @@ const styles = StyleSheet.create({
   container: { padding: 16 },
   sectionTitle: { fontWeight: "800", marginTop: 16, marginBottom: 8 },
   sectionInfo: { fontWeight: "900", marginBottom: 8 },
-  empty: { fontSize: 13, color: "#6B7280" },
-
   card: {
     backgroundColor: "#F9FAFB",
     borderRadius: 12,
@@ -515,19 +453,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
   },
   name: { fontWeight: "700" },
-
-  warning: {
-    fontSize: 12,
-    color: "#6B7280",
-    fontWeight: "700",
-  },
-
+  warning: { fontSize: 12, color: "#6B7280", fontWeight: "700" },
   add: { color: "#2563EB", fontWeight: "800" },
   remove: { color: "#DC2626", fontWeight: "800" },
-
   saveBtn: {
     marginTop: 20,
     paddingVertical: 14,
@@ -536,7 +466,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   saveText: { color: "#FFF", fontWeight: "800" },
-
   publishBtn: {
     marginTop: 12,
     paddingVertical: 14,
@@ -545,31 +474,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   publishText: { color: "#FFF", fontWeight: "800" },
-
-  statusBadge: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    alignSelf: "flex-start",
-    marginBottom: 8,
-  },
-  statusPublished: { backgroundColor: "#DCFCE7" },
-  statusDraft: { backgroundColor: "#FEF3C7" },
-  statusEmpty: { backgroundColor: "#E5E7EB" },
-  statusText: { fontWeight: "800", fontSize: 12 },
-
-  lockedInfo: {
-    backgroundColor: "#ECFDF5",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-  },
-  lockedText: {
-    color: "#065F46",
-    fontWeight: "800",
-    fontSize: 13,
-  },
-
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
@@ -582,7 +486,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
   },
-  modalTitle: { fontSize: 18, fontWeight: "900" },
+  modalTitle: { fontSize: 18, fontWeight: "900", marginBottom: 12 },
   modalText: { fontSize: 14, marginBottom: 20 },
   modalBtn: {
     paddingVertical: 14,
@@ -591,7 +495,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalBtnText: { color: "#FFF", fontWeight: "800" },
-
   modalPrimary: {
     paddingVertical: 14,
     borderRadius: 14,
@@ -600,7 +503,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   modalPrimaryText: { color: "#FFF", fontWeight: "800" },
-
   modalSecondary: { paddingVertical: 12, alignItems: "center" },
   modalSecondaryText: { color: "#6B7280", fontWeight: "700" },
 });

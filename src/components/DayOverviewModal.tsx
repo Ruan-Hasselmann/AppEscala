@@ -1,7 +1,15 @@
-// src/components/AdminDayModal.tsx
-
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { CalendarDayData, CalendarServiceStatus } from "./CalendarDashboard";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import {
+  CalendarDayData,
+  CalendarServiceStatus,
+} from "./CalendarDashboard";
 
 /* =========================
    PROPS
@@ -34,7 +42,12 @@ function statusStyle(status: CalendarServiceStatus) {
    COMPONENT
 ========================= */
 
-export function DayOverviewModal({ visible, day, onClose, mode = "admin" }: Props) {
+export function DayOverviewModal({
+  visible,
+  day,
+  onClose,
+  mode = "admin",
+}: Props) {
   if (!day) return null;
 
   // 🔥 Agrupa por TURNO
@@ -44,7 +57,7 @@ export function DayOverviewModal({ visible, day, onClose, mode = "admin" }: Prop
     return acc;
   }, {} as Record<string, typeof day.services>);
 
-  // 🔥 ORDENA ministérios dentro de cada turno
+  // 🔥 Ordena ministérios dentro do turno
   Object.values(byTurno).forEach((services) => {
     services.sort((a, b) =>
       a.ministry.localeCompare(b.ministry, "pt-BR")
@@ -64,7 +77,9 @@ export function DayOverviewModal({ visible, day, onClose, mode = "admin" }: Prop
           </Text>
 
           <Text style={styles.subtitle}>
-            {mode === "admin" ? "Visão administrativa" : "Visão do líder"}
+            {mode === "admin"
+              ? "Visão administrativa"
+              : "Visão do líder"}
           </Text>
 
           <ScrollView style={styles.content}>
@@ -79,19 +94,40 @@ export function DayOverviewModal({ visible, day, onClose, mode = "admin" }: Prop
                         {s.ministry}
                       </Text>
 
-                      <View style={[styles.statusPill, statusStyle(s.status)]}>
+                      <View
+                        style={[
+                          styles.statusPill,
+                          statusStyle(s.status),
+                        ]}
+                      >
                         <Text style={styles.statusText}>
                           {statusLabel(s.status)}
                         </Text>
                       </View>
                     </View>
 
+                    {/* PESSOAS */}
                     {s.people && s.people.length > 0 ? (
-                      s.people.map((p, i) => (
-                        <Text key={i} style={styles.person}>
-                          • {p.name}
-                        </Text>
-                      ))
+                      s.people.map((p, i) => {
+                        const attendance = p.attendance ?? "pending";
+
+                        return (
+                          <Text
+                            key={i}
+                            style={[
+                              styles.person,
+                              attendance === "declined" && styles.personDeclined,
+                              attendance === "confirmed" && styles.personConfirmed,
+                              attendance === "pending" && styles.personPending,
+                            ]}
+                          >
+                            • {p.name}
+                            {attendance === "declined" && " (recusou)"}
+                            {attendance === "confirmed" && " (confirmou)"}
+                            {attendance === "pending" && " (pendente)"}
+                          </Text>
+                        );
+                      })
                     ) : (
                       <Text style={styles.emptyText}>
                         Nenhuma pessoa escalada
@@ -194,7 +230,23 @@ const styles = StyleSheet.create({
   person: {
     fontSize: 14,
     marginTop: 2,
-    fontWeight: "bold"
+    fontWeight: "700",
+    color: "#111827",
+  },
+
+  personDeclined: {
+    color: "#DC2626",
+    fontWeight: "800",
+  },
+
+  personConfirmed: {
+    color: "#16A34A",
+    fontWeight: "800",
+  },
+
+  personPending: {
+    color: "#9CA3AF",
+    fontStyle: "italic",
   },
 
   emptyText: {

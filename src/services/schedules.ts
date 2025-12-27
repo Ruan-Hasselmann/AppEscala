@@ -5,9 +5,8 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  where,
+  where
 } from "firebase/firestore";
-
 import { db } from "./firebase";
 
 /* =========================
@@ -15,20 +14,30 @@ import { db } from "./firebase";
 ========================= */
 
 export type ScheduleStatus = "draft" | "published";
+export type AttendanceStatus = "pending" | "confirmed" | "declined";
 
 export type ScheduleAssignment = {
   personId: string;
   ministryId: string;
+  attendance?: AttendanceStatus; // 🔥 confirmação do membro
 };
 
 export type Schedule = {
   id: string;
   ministryId: string;
   serviceDayId: string;
+
   serviceLabel: string;
+
+  // 🔥 DATA REAL (para ordenação)
+  serviceDayDate: any; // Firestore Timestamp
+
+  // 🔹 TEXTO DE EXIBIÇÃO
   serviceDate: string;
+
   status: ScheduleStatus;
   assignments: ScheduleAssignment[];
+
   createdBy: string;
   createdAt?: any;
   updatedAt?: any;
@@ -41,54 +50,6 @@ export type Schedule = {
 const COLLECTION = "schedules";
 
 /* =========================
-   INTERNAL – CONFLICT CHECK
-========================= */
-
-async function assertNoConflictSameDay(params: {
-  serviceDayId: string;
-  ministryId: string;
-  serviceLabel: string;
-  assignments: ScheduleAssignment[];
-}) {
-  const { serviceDayId, ministryId, serviceLabel, assignments } = params;
-
-  if (!serviceDayId || assignments.length === 0) return;
-
-  const personIds = assignments.map((a) => a.personId);
-
-  const q = query(
-    collection(db, COLLECTION),
-    where("serviceDayId", "==", serviceDayId)
-  );
-
-  const snap = await getDocs(q);
-
-  snap.docs.forEach((docSnap) => {
-    const s = docSnap.data() as Schedule;
-
-    // 🔥 IGNORA turnos DIFERENTES (permitido)
-    if (s.serviceLabel !== serviceLabel) {
-      return;
-    }
-
-    // 🔥 IGNORA a própria escala (mesmo ministério + mesmo turno)
-    if (
-      s.ministryId === ministryId &&
-      s.serviceLabel === serviceLabel
-    ) {
-      return;
-    }
-
-    // 🚫 BLOQUEIA: mesma pessoa no MESMO TURNO
-    (s.assignments ?? []).forEach((a) => {
-      if (personIds.includes(a.personId)) {
-        throw new Error("CONFLICT_SAME_TURN");
-      }
-    });
-  });
-}
-
-/* =========================
    SAVE / UPDATE DRAFT
 ========================= */
 
@@ -97,6 +58,7 @@ export async function saveScheduleDraft(params: {
   serviceDayId: string;
   serviceLabel: string;
   serviceDate: string;
+  serviceDayDate: Date;
   assignments: ScheduleAssignment[];
   createdBy: string;
 }) {
@@ -109,31 +71,17 @@ export async function saveScheduleDraft(params: {
     createdBy,
   } = params;
 
-  if (
-    !ministryId ||
-    !serviceDayId ||
-    !serviceLabel ||
-    !serviceDate ||
-    !createdBy
-  ) {
+  if (!ministryId || !serviceDayId || !serviceLabel || !serviceDate || !createdBy) {
     throw new Error("Parâmetros inválidos para salvar escala");
   }
 
-  // ❗ Regra mínima: não permitir duplicados no mesmo turno
+  // ❗ regra mínima: não permitir pessoa duplicada no MESMO turno
   const unique = new Set(assignments.map((a) => a.personId));
   if (unique.size !== assignments.length) {
     throw new Error("Pessoa duplicada na escala");
   }
 
-  // 🔒 REGRA FORTE: conflito no mesmo dia (backend)
-  await assertNoConflictSameDay({
-    serviceDayId,
-    ministryId,
-    serviceLabel,
-    assignments,
-  });
-
-  // Identifica por DIA + MINISTÉRIO + TURNO
+  // 🔎 identifica por DIA + MINISTÉRIO + TURNO
   const q = query(
     collection(db, COLLECTION),
     where("ministryId", "==", ministryId),
@@ -143,7 +91,7 @@ export async function saveScheduleDraft(params: {
 
   const snap = await getDocs(q);
 
-  // Atualiza se existir
+  // 🔁 atualiza rascunho existente
   if (!snap.empty) {
     const ref = doc(db, COLLECTION, snap.docs[0].id);
 
@@ -154,6 +102,7 @@ export async function saveScheduleDraft(params: {
         assignments,
         status: "draft",
         updatedAt: serverTimestamp(),
+        serviceDayDate: params.serviceDayDate,
       },
       { merge: true }
     );
@@ -161,7 +110,7 @@ export async function saveScheduleDraft(params: {
     return snap.docs[0].id;
   }
 
-  // Cria novo draft
+  // ➕ cria novo rascunho
   const ref = doc(collection(db, COLLECTION));
 
   await setDoc(ref, {
@@ -169,6 +118,7 @@ export async function saveScheduleDraft(params: {
     serviceDayId,
     serviceLabel,
     serviceDate,
+    serviceDayDate: params.serviceDayDate,
     status: "draft",
     assignments,
     createdBy,
@@ -181,6 +131,7 @@ export async function saveScheduleDraft(params: {
 
 /* =========================
    LIST BY MONTH
+   (por ministério + dias)
 ========================= */
 
 export async function listSchedulesByMonth(params: {
@@ -205,13 +156,13 @@ export async function listSchedulesByMonth(params: {
 
 /* =========================
    LIST BY SERVICE DAY
+   (conflitos no mesmo dia)
 ========================= */
 
 export async function listSchedulesByServiceDay(params: {
   serviceDayId: string;
 }): Promise<Schedule[]> {
   const { serviceDayId } = params;
-
   if (!serviceDayId) return [];
 
   const q = query(
@@ -229,6 +180,7 @@ export async function listSchedulesByServiceDay(params: {
 
 /* =========================
    GET BY SERVICE
+   (dia + ministério + turno)
 ========================= */
 
 export async function getScheduleByService(params: {
@@ -278,6 +230,13 @@ export async function publishSchedule(params: {
   }
 
   const ref = doc(db, COLLECTION, snap.docs[0].id);
+  const schedule = snap.docs[0].data() as Schedule;
+
+  // 🔥 ao publicar, todos começam como PENDING
+  const assignmentsWithAttendance = (schedule.assignments ?? []).map((a) => ({
+    ...a,
+    attendance: "pending" as AttendanceStatus,
+  }));
 
   await setDoc(
     ref,
@@ -287,4 +246,81 @@ export async function publishSchedule(params: {
     },
     { merge: true }
   );
+}
+
+/* =========================
+   CONFIRM / DECLINE PRESENCE
+========================= */
+
+export async function updateAttendance(params: {
+  scheduleId: string;
+  personId: string;
+  attendance: AttendanceStatus;
+}) {
+  const { scheduleId, personId, attendance } = params;
+
+  const q = query(
+    collection(db, COLLECTION),
+    where("__name__", "==", scheduleId)
+  );
+
+  const snap = await getDocs(q);
+
+  if (snap.empty) {
+    throw new Error("Escala não encontrada");
+  }
+
+  const ref = doc(db, COLLECTION, scheduleId);
+  const schedule = snap.docs[0].data() as Schedule;
+
+  if (schedule.status !== "published") {
+    throw new Error("Escala não publicada");
+  }
+
+  const updatedAssignments = (schedule.assignments ?? []).map((a) =>
+    a.personId === personId
+      ? { ...a, attendance }
+      : a
+  );
+
+  await setDoc(
+    ref,
+    {
+      assignments: updatedAssignments,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export async function listPublishedSchedulesByPerson(params: {
+  personId: string;
+}): Promise<
+  (Schedule & { attendance: "pending" | "confirmed" | "declined" })[]
+> {
+  const { personId } = params;
+
+  const q = query(
+    collection(db, COLLECTION),
+    where("status", "==", "published")
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs
+    .map((d) => {
+      const data = d.data() as Schedule;
+      const assignment = data.assignments?.find(
+        (a) => a.personId === personId
+      );
+
+      if (!assignment) return null;
+
+      return {
+        ...data,
+        id: d.id,
+        attendance: assignment.attendance ?? "pending",
+      };
+    })
+    .filter(Boolean) as any[];
 }
