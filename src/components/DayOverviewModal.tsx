@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -10,6 +11,19 @@ import {
   CalendarDayData,
   CalendarServiceStatus,
 } from "./CalendarDashboard";
+import { ReplaceMemberModal } from "./ReplaceMemberModal";
+
+/* =========================
+   TYPES
+========================= */
+
+type ReplaceContext = {
+  scheduleId: string;
+  ministryName: string;
+  serviceLabel: string;
+  serviceDate: string;
+  declinedPersonName: string;
+};
 
 /* =========================
    PROPS
@@ -48,103 +62,140 @@ export function DayOverviewModal({
   onClose,
   mode = "admin",
 }: Props) {
-  if (!day) return null;
+  const [replaceContext, setReplaceContext] =
+    useState<ReplaceContext | null>(null);
 
-  // 🔥 Agrupa por TURNO
-  const byTurno = day.services.reduce((acc, s) => {
-    if (!acc[s.turno]) acc[s.turno] = [];
-    acc[s.turno].push(s);
-    return acc;
-  }, {} as Record<string, typeof day.services>);
+  const safeDay = day;
 
-  // 🔥 Ordena ministérios dentro do turno
-  Object.values(byTurno).forEach((services) => {
-    services.sort((a, b) =>
-      a.ministry.localeCompare(b.ministry, "pt-BR")
-    );
-  });
+  const byTurno = useMemo(() => {
+    if (!safeDay) return {};
+    return safeDay.services.reduce((acc, s) => {
+      if (!acc[s.turno]) acc[s.turno] = [];
+      acc[s.turno].push(s);
+      return acc;
+    }, {} as Record<string, typeof safeDay.services>);
+  }, [safeDay]);
+
+  if (!safeDay) return null;
+
+  /* =========================
+     RENDER
+  ========================= */
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.overlay}>
-        <View style={styles.modal}>
-          <Text style={styles.title}>
-            {day.date.toLocaleDateString("pt-BR", {
-              weekday: "long",
-              day: "2-digit",
-              month: "long",
-            })}
-          </Text>
+    <>
+      {/* ================= MODAL PRINCIPAL ================= */}
+      <Modal visible={visible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.title}>
+              {safeDay.date.toLocaleDateString("pt-BR", {
+                weekday: "long",
+                day: "2-digit",
+                month: "long",
+              })}
+            </Text>
 
-          <Text style={styles.subtitle}>
-            {mode === "admin"
-              ? "Visão administrativa"
-              : "Visão do líder"}
-          </Text>
+            <Text style={styles.subtitle}>
+              {mode === "admin"
+                ? "Visão administrativa"
+                : "Visão do líder"}
+            </Text>
 
-          <ScrollView style={styles.content}>
-            {Object.entries(byTurno).map(([turno, services]) => (
-              <View key={turno} style={styles.turnoBlock}>
-                <Text style={styles.turnoTitle}>{turno}</Text>
+            <ScrollView style={styles.content}>
+              {Object.entries(byTurno).map(([turno, services]) => (
+                <View key={turno} style={styles.turnoBlock}>
+                  <Text style={styles.turnoTitle}>{turno}</Text>
 
-                {services.map((s, idx) => (
-                  <View key={idx} style={styles.serviceCard}>
-                    <View style={styles.serviceHeader}>
-                      <Text style={styles.serviceTitle}>
-                        {s.ministry}
-                      </Text>
-
-                      <View
-                        style={[
-                          styles.statusPill,
-                          statusStyle(s.status),
-                        ]}
-                      >
-                        <Text style={styles.statusText}>
-                          {statusLabel(s.status)}
+                  {services.map((s, idx) => (
+                    <View key={idx} style={styles.serviceCard}>
+                      <View style={styles.serviceHeader}>
+                        <Text style={styles.serviceTitle}>
+                          {s.ministry}
                         </Text>
-                      </View>
-                    </View>
 
-                    {/* PESSOAS */}
-                    {s.people && s.people.length > 0 ? (
-                      s.people.map((p, i) => {
-                        const attendance = p.attendance ?? "pending";
+                        <View
+                          style={[
+                            styles.statusPill,
+                            statusStyle(s.status),
+                          ]}
+                        >
+                          <Text style={styles.statusText}>
+                            {statusLabel(s.status)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {s.people?.map((p) => {
+                        const attendance =
+                          p.attendance ?? "pending";
 
                         return (
-                          <Text
-                            key={i}
-                            style={[
-                              styles.person,
-                              attendance === "declined" && styles.personDeclined,
-                              attendance === "confirmed" && styles.personConfirmed,
-                              attendance === "pending" && styles.personPending,
-                            ]}
+                          <View
+                            key={p.id}
+                            style={styles.personRow}
                           >
-                            • {p.name}
-                            {attendance === "declined" && " (recusou)"}
-                            {attendance === "confirmed" && " (confirmou)"}
-                            {attendance === "pending" && " (pendente)"}
-                          </Text>
-                        );
-                      })
-                    ) : (
-                      <Text style={styles.emptyText}>
-                        Nenhuma pessoa escalada
-                      </Text>
-                    )}
-                  </View>
-                ))}
-              </View>
-            ))}
-          </ScrollView>
+                            <Text style={styles.person}>
+                              • {p.name} ({attendance})
+                            </Text>
 
-          <Pressable style={styles.close} onPress={onClose}>
-            <Text style={styles.closeText}>Fechar</Text>
-          </Pressable>
+                            {mode === "leader" &&
+                              s.status === "published" &&
+                              attendance === "declined" && (
+                                <Pressable
+                                  onPress={() => {
+                                    onClose(); // fecha modal principal
+
+                                    setTimeout(() => {
+                                      setReplaceContext({
+                                        scheduleId: s.scheduleId,
+                                        ministryName: s.ministry,
+                                        serviceLabel: s.turno,
+                                        serviceDate:
+                                          safeDay.date.toLocaleDateString(
+                                            "pt-BR"
+                                          ),
+                                        declinedPersonName:
+                                          p.name,
+                                      });
+                                    }, 50);
+                                  }}
+                                >
+                                  <Text style={styles.replaceBtn}>
+                                    Substituir
+                                  </Text>
+                                </Pressable>
+                              )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+
+            <Pressable style={styles.close} onPress={onClose}>
+              <Text style={styles.closeText}>Fechar</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+
+      {/* ================= MODAL DE SUBSTITUIÇÃO ================= */}
+      <ReplaceMemberModal
+        visible={!!replaceContext}
+        onClose={() => setReplaceContext(null)}
+        ministryName={replaceContext?.ministryName ?? ""}
+        serviceLabel={replaceContext?.serviceLabel ?? ""}
+        serviceDate={replaceContext?.serviceDate ?? ""}
+        declinedPersonName={
+          replaceContext?.declinedPersonName ?? ""
+        }
+        candidates={[]}
+        onConfirm={() => { }}
+      />
+    </>
   );
 }
 
@@ -180,13 +231,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  content: {
-    marginBottom: 12,
-  },
+  content: { marginBottom: 12 },
 
-  turnoBlock: {
-    marginBottom: 16,
-  },
+  turnoBlock: { marginBottom: 16 },
 
   turnoTitle: {
     fontSize: 16,
@@ -208,9 +255,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
 
-  serviceTitle: {
-    fontWeight: "800",
-  },
+  serviceTitle: { fontWeight: "800" },
 
   statusPill: {
     paddingVertical: 4,
@@ -222,31 +267,29 @@ const styles = StyleSheet.create({
   draft: { backgroundColor: "#FEF3C7" },
   empty: { backgroundColor: "#E5E7EB" },
 
-  statusText: {
-    fontSize: 12,
-    fontWeight: "800",
+  statusText: { fontSize: 12, fontWeight: "800" },
+
+  personRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 4,
   },
 
   person: {
     fontSize: 14,
-    marginTop: 2,
     fontWeight: "700",
     color: "#111827",
   },
 
-  personDeclined: {
-    color: "#DC2626",
-    fontWeight: "800",
-  },
+  personConfirmed: { color: "#16A34A", fontWeight: "800" },
+  personDeclined: { color: "#DC2626", fontWeight: "800" },
+  personPending: { color: "#92400E", fontWeight: "800" },
 
-  personConfirmed: {
-    color: "#16A34A",
+  replaceBtn: {
+    color: "#2563EB",
     fontWeight: "800",
-  },
-
-  personPending: {
-    color: "#9CA3AF",
-    fontStyle: "italic",
+    fontSize: 13,
   },
 
   emptyText: {
@@ -256,7 +299,7 @@ const styles = StyleSheet.create({
   },
 
   close: {
-    marginTop: 8,
+    marginTop: 12,
     paddingVertical: 14,
     borderRadius: 14,
     backgroundColor: "#111827",

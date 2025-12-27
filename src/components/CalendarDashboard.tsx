@@ -25,6 +25,8 @@ export type CalendarDayData = {
   services: {
     turno: string;
     ministry: string;
+    ministryId: string;   // 🔥 NOVO
+    scheduleId: string;   // 🔥 NOVO
     status: CalendarServiceStatus;
     attendanceSummary?: {
       declined: number;
@@ -32,7 +34,7 @@ export type CalendarDayData = {
       confirmed: number;
     };
     people?: {
-      id?: string;
+      id: string;
       name: string;
       role: string;
       attendance?: "pending" | "confirmed" | "declined";
@@ -81,17 +83,23 @@ function getCalendarMatrix(year: number, month: number) {
 function getDayStatus(
   services: CalendarDayData["services"]
 ): CalendarServiceStatus {
-  const total = services.length;
-  const published = services.filter(
-    (s) => s.status === "published"
-  ).length;
-  const draft = services.filter(
-    (s) => s.status === "draft"
-  ).length;
+  if (services.length === 0) return "empty";
 
-  if (total > 0 && published === total) return "published";
-  if (published > 0) return "partial";
-  if (draft > 0) return "draft";
+  const hasDraft = services.some((s) => s.status === "draft");
+  const hasPublished = services.some((s) => s.status === "published");
+
+  const hasDeclinedOrPending = services.some((s) =>
+    s.people?.some(
+      (p) =>
+        p.attendance === "declined" ||
+        p.attendance === "pending"
+    )
+  );
+
+  if (hasPublished && hasDeclinedOrPending) return "partial";
+  if (hasPublished) return "published";
+  if (hasDraft) return "draft";
+
   return "empty";
 }
 
@@ -247,7 +255,7 @@ export function CalendarDashboard({
                         style={[
                           styles.person,
                           p.attendance === "declined" &&
-                            styles.personDeclined,
+                          styles.personDeclined,
                         ]}
                       >
                         • {p.name}
