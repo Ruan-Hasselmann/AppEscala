@@ -188,9 +188,6 @@ export function CalendarDashboard({
                             : styles.badgeEmpty,
                     ]}
                   >
-                    <Text style={styles.badgeText}>
-                      {dayData.services.length}
-                    </Text>
                   </View>
                 )}
             </Pressable>
@@ -225,7 +222,7 @@ export function CalendarDashboard({
                 <View key={i} style={styles.service}>
                   {/* Ministério */}
                   <Text style={styles.serviceTitle}>
-                    {s.turno} {s.ministry}
+                    {s.ministry} - {s.turno}
                   </Text>
                   {/* STATUS — só se NÃO estiver publicado */}
                   {s.status !== "published" && (
