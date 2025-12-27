@@ -4,6 +4,7 @@ import {
     Modal,
     Platform,
     Pressable,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -14,7 +15,7 @@ import {
     createServiceDay,
     deleteServiceDay,
     getServiceDaysByMonth,
-    ServiceDay
+    ServiceDay,
 } from "@/src/services/serviceDays";
 import {
     createService,
@@ -27,9 +28,20 @@ import {
 ========================= */
 
 type DraftService = {
-    label: string;
     shift: "manha" | "tarde" | "noite" | "custom";
+    label: string;
 };
+
+const SHIFT_LABEL: Record<
+    "manha" | "tarde" | "noite" | "custom",
+    string
+> = {
+    manha: "Manhã",
+    tarde: "Tarde",
+    noite: "Noite",
+    custom: "Personalizado",
+};
+
 
 type Props = {
     visible: boolean;
@@ -52,7 +64,6 @@ export function AdminServiceDayModal({
 }: Props) {
     const [draftServices, setDraftServices] = useState<DraftService[]>([]);
     const [existingServices, setExistingServices] = useState<Service[]>([]);
-    const [customLabel, setCustomLabel] = useState("");
     const [confirmRemove, setConfirmRemove] = useState(false);
 
     /* =========================
@@ -72,38 +83,39 @@ export function AdminServiceDayModal({
     }, [visible, serviceDay]);
 
     /* =========================
-       ACTIONS
+       HELPERS
     ========================= */
 
-    function selectCount(n: number) {
-        const labels = ["Manhã", "Noite", "Tarde"];
-        const shifts = ["manha", "noite", "tarde"] as const;
+    function createDraft(count: number) {
+        const presets = [
+            { shift: "manha", label: "Manhã" },
+            { shift: "noite", label: "Noite" },
+            { shift: "tarde", label: "Tarde" },
+        ] as const;
 
         setDraftServices(
-            Array.from({ length: n }).map((_, i) => ({
-                label: labels[i] ?? `Culto ${i + 1}`,
-                shift: shifts[i] ?? "custom",
+            Array.from({ length: count }).map((_, i) => ({
+                shift: presets[i]?.shift ?? "custom",
+                label: presets[i]?.label ?? `Culto ${i + 1}`,
             }))
         );
     }
 
-    function addCustomService() {
-        if (!customLabel.trim()) return;
-
-        setDraftServices((prev) => [
-            ...prev,
-            { label: customLabel.trim(), shift: "custom" },
-        ]);
-
-        setCustomLabel("");
+    function updateDraft(index: number, patch: Partial<DraftService>) {
+        setDraftServices((prev) =>
+            prev.map((s, i) => (i === index ? { ...s, ...patch } : s))
+        );
     }
 
+    /* =========================
+       SAVE
+    ========================= */
+
     async function handleSave() {
-        if (!date) return;
+        if (!date || draftServices.length === 0) return;
 
         let day = serviceDay;
 
-        // cria o dia apenas se ainda não existir
         if (!day) {
             await createServiceDay(date);
 
@@ -149,17 +161,13 @@ export function AdminServiceDayModal({
     ========================= */
 
     return (
-        <Modal
-            visible={visible}
-            transparent
-            animationType="fade"
-            onRequestClose={onClose}
-        >
+        <Modal visible={visible} transparent animationType="fade">
             <View style={styles.overlay}>
                 <KeyboardAvoidingView
+                    style={styles.container}
                     behavior={Platform.OS === "ios" ? "padding" : "height"}
                 >
-                    <View style={styles.modal}>
+                    <ScrollView style={styles.modal}>
                         <Text style={styles.title}>
                             {date?.toLocaleDateString("pt-BR", {
                                 weekday: "long",
@@ -168,15 +176,13 @@ export function AdminServiceDayModal({
                             })}
                         </Text>
 
-                        {/* DIA EXISTENTE */}
+                        {/* DIA JÁ EXISTE */}
                         {serviceDay ? (
                             <>
                                 <Text style={styles.section}>Cultos cadastrados</Text>
 
                                 {existingServices.length === 0 ? (
-                                    <Text style={styles.muted}>
-                                        Nenhum culto encontrado
-                                    </Text>
+                                    <Text style={styles.muted}>Nenhum culto encontrado</Text>
                                 ) : (
                                     existingServices.map((s) => (
                                         <Text key={s.id} style={styles.item}>
@@ -199,22 +205,20 @@ export function AdminServiceDayModal({
                                 </Pressable>
                             </>
                         ) : (
-                            <>
-                                {/* NOVO DIA */}
+                            <View>
                                 <Text style={styles.section}>
                                     Quantos cultos este dia terá?
                                 </Text>
 
                                 <View style={styles.row}>
-                                    {[1, 2, 3].map((n) => (
+                                    {[1, 2, 3, 4].map((n) => (
                                         <Pressable
                                             key={n}
                                             style={[
                                                 styles.countBtn,
-                                                draftServices.length === n &&
-                                                styles.countActive,
+                                                draftServices.length === n && styles.countActive,
                                             ]}
-                                            onPress={() => selectCount(n)}
+                                            onPress={() => createDraft(n)}
                                         >
                                             <Text
                                                 style={[
@@ -229,30 +233,62 @@ export function AdminServiceDayModal({
                                     ))}
                                 </View>
 
-                                {/* CUSTOM */}
-                                <View style={styles.customRow}>
-                                    <TextInput
-                                        placeholder="Culto especial (ex: 18h)"
-                                        value={customLabel}
-                                        onChangeText={setCustomLabel}
-                                        style={styles.input}
-                                    />
-                                    <Pressable
-                                        style={styles.addCustom}
-                                        onPress={addCustomService}
-                                    >
-                                        <Text style={styles.addCustomText}>
-                                            Adicionar
+                                {draftServices.map((s, i) => (
+                                    <View key={i} style={styles.serviceBox}>
+                                        <Text style={styles.serviceTitle}>
+                                            Culto {i + 1}
                                         </Text>
-                                    </Pressable>
-                                </View>
+
+                                        <View style={styles.shiftRow}>
+                                            {(["manha", "tarde", "noite", "custom"] as const).map((opt) => (
+                                                <Pressable
+                                                    key={opt}
+                                                    style={[
+                                                        styles.shiftBtn,
+                                                        s.shift === opt && styles.shiftActive,
+                                                    ]}
+                                                    onPress={() =>
+                                                        updateDraft(i, {
+                                                            shift: opt,
+                                                            label:
+                                                                opt === "custom"
+                                                                    ? ""
+                                                                    : SHIFT_LABEL[opt],
+                                                        })
+                                                    }
+                                                >
+                                                    <Text
+                                                        style={[
+                                                            styles.shiftText,
+                                                            s.shift === opt && styles.shiftTextActive,
+                                                        ]}
+                                                    >
+                                                        {SHIFT_LABEL[opt]}
+                                                    </Text>
+                                                </Pressable>
+                                            ))}
+                                        </View>
+                                        {s.shift === "custom" && (
+                                            <TextInput
+                                                placeholder="Ex: Culto Jovem, 18h, Vigília"
+                                                value={s.label}
+                                                onChangeText={(t) =>
+                                                    updateDraft(i, { label: t })
+                                                }
+                                                style={styles.input}
+                                            />
+                                        )}
+                                    </View>
+                                ))}
 
                                 <Pressable
                                     style={[
                                         styles.save,
-                                        draftServices.length === 0 && { opacity: 0.5 },
+                                        draftServices.some((s) => !s.label.trim()) && {
+                                            opacity: 0.5,
+                                        },
                                     ]}
-                                    disabled={draftServices.length === 0}
+                                    disabled={draftServices.some((s) => !s.label.trim())}
                                     onPress={handleSave}
                                 >
                                     <Text style={styles.saveText}>Salvar</Text>
@@ -261,9 +297,9 @@ export function AdminServiceDayModal({
                                 <Pressable style={styles.cancel} onPress={onClose}>
                                     <Text>Cancelar</Text>
                                 </Pressable>
-                            </>
+                            </View>
                         )}
-                    </View>
+                    </ScrollView>
                 </KeyboardAvoidingView>
             </View>
             <Modal
@@ -272,7 +308,7 @@ export function AdminServiceDayModal({
                 animationType="fade"
                 onRequestClose={() => setConfirmRemove(false)}
             >
-                <View style={styles.overlay}>
+                <View style={styles.overlayConfirm}>
                     <View style={styles.confirmModal}>
                         <Text style={styles.confirmTitle}>
                             Remover dia de culto
@@ -321,16 +357,23 @@ export function AdminServiceDayModal({
 ========================= */
 
 const styles = StyleSheet.create({
+    container: { padding: 16 },
     overlay: {
         flex: 1,
         backgroundColor: "rgba(0,0,0,0.4)",
         justifyContent: "center",
-        padding: 20,
+    },
+    overlayConfirm: {
+        flex: 1,
+        backgroundColor: "rgba(0,0,0,0.4)",
+        justifyContent: "center",
+        padding: 16,
     },
     modal: {
         backgroundColor: "#FFF",
         borderRadius: 20,
         padding: 20,
+        //maxHeight: "85%",
     },
     title: {
         fontSize: 18,
@@ -353,7 +396,7 @@ const styles = StyleSheet.create({
     row: {
         flexDirection: "row",
         gap: 8,
-        marginBottom: 12,
+        marginBottom: 16,
     },
     countBtn: {
         width: 36,
@@ -373,28 +416,44 @@ const styles = StyleSheet.create({
     countTextActive: {
         color: "#FFF",
     },
-    customRow: {
-        flexDirection: "row",
-        gap: 8,
-        marginBottom: 12,
-    },
-    input: {
-        flex: 1,
+    serviceBox: {
         borderWidth: 1,
         borderColor: "#E5E7EB",
         borderRadius: 12,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
+        padding: 12,
+        marginBottom: 12,
     },
-    addCustom: {
-        paddingHorizontal: 12,
-        borderRadius: 12,
-        backgroundColor: "#111827",
-        justifyContent: "center",
-    },
-    addCustomText: {
-        color: "#FFF",
+    serviceTitle: {
         fontWeight: "800",
+        marginBottom: 6,
+    },
+    shiftRow: {
+        flexDirection: "row",
+        gap: 6,
+        marginBottom: 8,
+    },
+    shiftBtn: {
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        borderRadius: 8,
+        borderWidth: 1,
+    },
+    shiftActive: {
+        backgroundColor: "#2563EB",
+        borderColor: "#2563EB",
+    },
+    shiftText: {
+        fontSize: 12,
+        fontWeight: "700",
+    },
+    shiftTextActive: {
+        color: "#FFF",
+    },
+    input: {
+        borderWidth: 1,
+        borderColor: "#E5E7EB",
+        borderRadius: 10,
+        padding: 10,
     },
     save: {
         padding: 14,
@@ -415,11 +474,11 @@ const styles = StyleSheet.create({
         marginTop: 12,
         padding: 12,
         borderRadius: 12,
-        backgroundColor: "#FFF",
+        backgroundColor: "#DC2626",
         alignItems: "center",
     },
     removeText: {
-        color: "#DC2626",
+        color: "#FFF",
         fontWeight: "800",
     },
     close: {
