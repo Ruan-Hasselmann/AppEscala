@@ -2,6 +2,7 @@ import { AppHeader } from "@/src/components/AppHeader";
 import { AppScreen } from "@/src/components/AppScreen";
 import { useAuth } from "@/src/contexts/AuthContext";
 
+import { listAvailabilityByService } from "@/src/services/availabilities";
 import { listMinistries, Ministry } from "@/src/services/ministries";
 import { listPeople, Person } from "@/src/services/people";
 import {
@@ -11,7 +12,6 @@ import {
   saveScheduleDraft,
   Schedule,
 } from "@/src/services/schedules";
-
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -80,6 +80,10 @@ export default function LeaderGenerateSchedule() {
   const safeServiceLabel = (serviceLabel ?? "").trim();
 
   const isPublished = scheduleStatus === "published";
+  const [availablePersonIds, setAvailablePersonIds] = useState<Set<string>>(
+    new Set()
+  );
+
 
   /* =========================
      LOAD
@@ -88,7 +92,13 @@ export default function LeaderGenerateSchedule() {
   async function loadSchedule() {
     if (!safeServiceDayId || !safeMinistryId || !safeServiceLabel) return;
 
-    const [p, m, existingThisTurn, allSameDay] = await Promise.all([
+    const [
+      p,
+      m,
+      existingThisTurn,
+      allSameDay,
+      availability,
+    ] = await Promise.all([
       listPeople(),
       listMinistries(),
       getScheduleByService({
@@ -97,7 +107,15 @@ export default function LeaderGenerateSchedule() {
         serviceLabel: safeServiceLabel,
       }),
       listSchedulesByServiceDay({ serviceDayId: safeServiceDayId }),
+      listAvailabilityByService({
+        serviceDayId: safeServiceDayId,
+        serviceLabel: safeServiceLabel,
+      }),
     ]);
+
+    setAvailablePersonIds(
+      new Set(availability.map((a) => a.personId))
+    );
 
     setPeople(p.filter((x) => x.active));
     setMinistries(m.filter((x) => x.active));
@@ -206,16 +224,41 @@ export default function LeaderGenerateSchedule() {
   const availablePeople = useMemo(() => {
     if (!safeMinistryId) return [];
 
-    return people
-      .filter((p) => p.ministries.some((m) => m.ministryId === safeMinistryId))
-      .filter((p) => !unavailablePersonIds.includes(p.id))
-      .map((p) => {
-        const { blocked, warningsText } = buildWarnings(p.id);
-        return { ...p, blocked, warningsText };
-      })
+    const base = people
+      // pertence ao ministério
+      .filter((p) =>
+        p.ministries.some((m) => m.ministryId === safeMinistryId)
+      )
+      // 🔥 marcou disponibilidade para o turno
+      .filter((p) => availablePersonIds.has(p.id))
+      // não está escalado neste turno ainda
+      .filter((p) => !unavailablePersonIds.includes(p.id));
+
+    const enriched: PersonWithFlags[] = base.map((p) => {
+      const { blocked, warningsText } = buildWarnings(p.id);
+      return {
+        ...p,
+        blocked,
+        warningsText,
+        warnDraftOtherMinistry: warningsText.some((t) =>
+          t.includes("rascunho")
+        ),
+        warnOtherTurn: warningsText.some((t) =>
+          t.includes("outro turno")
+        ),
+      };
+    });
+
+    return enriched
       .filter((p) => !p.blocked)
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  }, [people, safeMinistryId, unavailablePersonIds, conflictsByPerson]);
+  }, [
+    people,
+    safeMinistryId,
+    unavailablePersonIds,
+    conflictsByPerson,
+    availablePersonIds,
+  ]);
 
   /* =========================
      ACTIONS
