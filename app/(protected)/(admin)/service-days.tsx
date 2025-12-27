@@ -6,15 +6,13 @@ import { AppScreen } from "@/src/components/AppScreen";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { duplicateServiceDays } from "@/src/services/duplicateServiceDays";
 import {
-    createServiceDay,
-    deleteServiceDay,
     getServiceDaysByMonth,
-    ServiceDay,
+    ServiceDay
 } from "@/src/services/serviceDays";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
-    Alert,
+    Modal,
     Pressable,
     ScrollView,
     StyleSheet,
@@ -59,11 +57,21 @@ function buildMonthMatrix(month: Date) {
 export default function AdminServiceDays() {
     const { user, logout } = useAuth();
 
-    const [month, setMonth] = useState(new Date());
+    const [month, setMonth] = useState(() => {
+        const now = new Date();
+        return new Date(
+            now.getFullYear(),
+            now.getMonth() + 1,
+            1
+        );
+    });
     const [serviceDays, setServiceDays] = useState<ServiceDay[]>([]);
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
     const [selectedServiceDay, setSelectedServiceDay] =
         useState<ServiceDay | null>(null);
+    const [successVisible, setSuccessVisible] = useState(false);
+    const [successMessage, setSuccessMessage] = useState("");
+
 
 
     /* =========================
@@ -98,34 +106,6 @@ export default function AdminServiceDays() {
        ACTIONS
     ========================= */
 
-    async function toggleDay(date: Date) {
-        const existing = serviceDays.find((d) =>
-            sameDay(d.date, date)
-        );
-
-        if (existing) {
-            Alert.alert(
-                "Remover dia de culto",
-                "Deseja remover todos os cultos deste dia?",
-                [
-                    { text: "Cancelar", style: "cancel" },
-                    {
-                        text: "Remover",
-                        style: "destructive",
-                        onPress: async () => {
-                            await deleteServiceDay(existing.id);
-                            await load();
-                        },
-                    },
-                ]
-            );
-            return;
-        }
-
-        await createServiceDay(date);
-        await load();
-    }
-
     async function onDayPress(date: Date) {
         const existing = serviceDays.find((d) =>
             sameDay(d.date, date)
@@ -146,9 +126,11 @@ export default function AdminServiceDays() {
             await duplicateServiceDays(sourceMonth, month);
             await load();
 
-            Alert.alert("Sucesso", "Dias duplicados com sucesso.");
+            setSuccessMessage("Dias duplicados com sucesso.");
+            setSuccessVisible(true);
         } catch (err: any) {
-            Alert.alert("Erro", err.message);
+            setSuccessMessage(`Erro - ${err.message}`);
+            setSuccessVisible(true);
         }
     }
 
@@ -216,7 +198,7 @@ export default function AdminServiceDays() {
                     </View>
 
                     {/* CALENDÁRIO */}
-                    <View style={styles.grid}>
+                    <View style={styles.calendar}>
                         {calendarDays.map((date, idx) => {
                             if (!date) {
                                 return <View key={idx} style={styles.empty} />;
@@ -229,7 +211,7 @@ export default function AdminServiceDays() {
                                 <Pressable
                                     key={date.toISOString()}
                                     style={[
-                                        styles.day,
+                                        styles.dayCell,
                                         today && styles.today,
                                     ]}
                                     onPress={() => onDayPress(date)} // ✅ AQUI
@@ -265,6 +247,29 @@ export default function AdminServiceDays() {
                 }}
                 onSaved={load}
             />
+            {/* SUCCESS MODAL */}
+            <Modal
+                visible={successVisible}
+                transparent
+                animationType="fade"
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modal}>
+                        <Text style={styles.modalTitle}>Sucesso</Text>
+
+                        <Text style={styles.modalMessage}>
+                            {successMessage}
+                        </Text>
+
+                        <Pressable
+                            style={styles.close}
+                            onPress={() => setSuccessVisible(false)}
+                        >
+                            <Text style={styles.closeText}>OK</Text>
+                        </Pressable>
+                    </View>
+                </View>
+            </Modal>
         </AppScreen>
     );
 }
@@ -276,50 +281,65 @@ export default function AdminServiceDays() {
 const styles = StyleSheet.create({
     container: { padding: 16 },
 
+    /* =========================
+       HEADER
+    ========================= */
+
     monthHeader: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
         marginBottom: 12,
     },
+
     monthTitle: {
         fontSize: 18,
         fontWeight: "800",
         textTransform: "capitalize",
     },
+
     nav: { fontSize: 28, fontWeight: "800" },
+
+    /* =========================
+       WEEK
+    ========================= */
 
     weekRow: {
         flexDirection: "row",
         marginBottom: 8,
     },
+
     weekDay: {
-        width: "14.285%",
+        flex: 1,
         textAlign: "center",
         fontWeight: "700",
         color: "#6B7280",
     },
 
-    grid: {
+    /* =========================
+       CALENDAR
+    ========================= */
+
+    calendar: {
         flexDirection: "row",
         flexWrap: "wrap",
     },
 
     empty: {
-        width: "14.285%",
+        width: "14.2857%",
         aspectRatio: 1,
     },
 
-    day: {
-        width: "14.285%",
+    dayCell: {
+        width: "14.2857%",
         aspectRatio: 1,
         borderRadius: 10,
         borderWidth: 1,
         borderColor: "#E5E7EB",
         justifyContent: "center",
         alignItems: "center",
-        backgroundColor: "#FFFFFF",
-        marginBottom: 8,
+        backgroundColor: "#FFF",
+        marginBottom: 10,
     },
 
     today: {
@@ -328,16 +348,24 @@ const styles = StyleSheet.create({
     },
 
     dayNumber: {
-        fontWeight: "700",
+        fontWeight: "800",
         marginBottom: 4,
     },
+
+    /* =========================
+       DOTS (status-ready)
+    ========================= */
 
     dot: {
         width: 8,
         height: 8,
         borderRadius: 4,
-        backgroundColor: "#2563EB",
+        backgroundColor: "#22C55E", // por enquanto todos iguais
     },
+
+    /* =========================
+       ACTIONS
+    ========================= */
 
     duplicateBtn: {
         marginTop: 16,
@@ -346,8 +374,46 @@ const styles = StyleSheet.create({
         backgroundColor: "#111827",
         alignItems: "center",
     },
+
     duplicateText: {
         color: "#FFFFFF",
+        fontWeight: "800",
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: "rgba(0,0,0,0.4)",
+        justifyContent: "center",
+        padding: 20,
+    },
+
+    modal: {
+        backgroundColor: "#FFF",
+        padding: 20,
+        borderRadius: 20,
+    },
+
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: "800",
+        marginBottom: 8,
+        textTransform: "capitalize",
+    },
+
+    modalMessage: {
+        fontSize: 14,
+        color: "#374151",
+        marginBottom: 16,
+    },
+
+    close: {
+        padding: 12,
+        borderRadius: 12,
+        backgroundColor: "#111827",
+        alignItems: "center",
+    },
+
+    closeText: {
+        color: "#FFF",
         fontWeight: "800",
     },
 });
