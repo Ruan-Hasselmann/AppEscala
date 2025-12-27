@@ -11,6 +11,7 @@ type Props = {
   visible: boolean;
   day: CalendarDayData | null;
   onClose: () => void;
+  mode?: "admin" | "leader";
 };
 
 /* =========================
@@ -33,7 +34,7 @@ function statusStyle(status: CalendarServiceStatus) {
    COMPONENT
 ========================= */
 
-export function AdminDayModal({ visible, day, onClose }: Props) {
+export function DayOverviewModal({ visible, day, onClose, mode = "admin" }: Props) {
   if (!day) return null;
 
   // 🔥 Agrupa por TURNO
@@ -63,7 +64,7 @@ export function AdminDayModal({ visible, day, onClose }: Props) {
           </Text>
 
           <Text style={styles.subtitle}>
-            Visão administrativa
+            {mode === "admin" ? "Visão administrativa" : "Visão do líder"}
           </Text>
 
           <ScrollView style={styles.content}>

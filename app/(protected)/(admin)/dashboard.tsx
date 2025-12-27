@@ -1,6 +1,5 @@
 // app/(protected)/(admin)/dashboard.tsx
 
-import { AdminDayModal } from "@/src/components/AdminDayModal";
 import { AppHeader } from "@/src/components/AppHeader";
 import { AppScreen } from "@/src/components/AppScreen";
 import {
@@ -8,6 +7,7 @@ import {
   CalendarDayData,
   CalendarServiceStatus,
 } from "@/src/components/CalendarDashboard";
+import { DayOverviewModal } from "@/src/components/DayOverviewModal";
 import { useAuth } from "@/src/contexts/AuthContext";
 
 import { listMinistries, Ministry } from "@/src/services/ministries";
@@ -260,7 +260,7 @@ export default function AdminDashboard() {
       </ScrollView>
 
       {/* MODAL DO DIA (ADMIN) */}
-      <AdminDayModal
+      <DayOverviewModal
         visible={!!selectedDay}
         day={selectedDay}
         onClose={() => setSelectedDay(null)}

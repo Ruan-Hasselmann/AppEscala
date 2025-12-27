@@ -5,6 +5,7 @@ import {
   CalendarDayData,
   CalendarServiceStatus,
 } from "@/src/components/CalendarDashboard";
+import { DayOverviewModal } from "@/src/components/DayOverviewModal";
 import { useAuth } from "@/src/contexts/AuthContext";
 
 import { listMinistries, Ministry } from "@/src/services/ministries";
@@ -37,6 +38,9 @@ export default function LeaderDashboard() {
   const [person, setPerson] = useState<Person | null>(null);
   const [ministries, setMinistries] = useState<Ministry[]>([]);
   const [allPeople, setAllPeople] = useState<Person[]>([]);
+  const [selectedDay, setSelectedDay] = useState<CalendarDayData | null>(null);
+  const [showDayModal, setShowDayModal] = useState(false);
+
 
   /* =========================
      PEOPLE INDEX
@@ -201,6 +205,12 @@ export default function LeaderDashboard() {
     }, [leaderMinistries, month])
   );
 
+  function handleDayPress(day: CalendarDayData) {
+    setSelectedDay(day);
+    setShowDayModal(true);
+  }
+
+
   /* =========================
      RENDER
   ========================= */
@@ -257,9 +267,19 @@ export default function LeaderDashboard() {
           <CalendarDashboard
             month={month}
             data={calendarData}
+            onDayPress={handleDayPress}
           />
         </View>
       </ScrollView>
+      <DayOverviewModal
+        visible={showDayModal}
+        day={selectedDay}
+        mode="leader"
+        onClose={() => {
+          setShowDayModal(false);
+          setSelectedDay(null);
+        }}
+      />
     </AppScreen>
   );
 }

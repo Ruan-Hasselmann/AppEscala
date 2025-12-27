@@ -69,7 +69,6 @@ export default function LeaderGenerateSchedule() {
     useState<"draft" | "published" | "empty">("empty");
   const [showPublishModal, setShowPublishModal] = useState(false);
 
-  // conflitos no MESMO DIA (para avisos/bloqueios)
   const [conflictsByPerson, setConflictsByPerson] = useState<
     Map<string, ConflictInfo[]>
   >(new Map());
@@ -78,12 +77,13 @@ export default function LeaderGenerateSchedule() {
   const safeMinistryId = ministryId ?? "";
   const safeServiceLabel = (serviceLabel ?? "").trim();
 
+  const isPublished = scheduleStatus === "published";
+
   /* =========================
      LOAD
   ========================= */
 
   async function loadSchedule() {
-    // 🔒 sem esses 3, não tem como identificar a escala corretamente
     if (!safeServiceDayId || !safeMinistryId || !safeServiceLabel) return;
 
     const [p, m, existingThisTurn, allSameDay] = await Promise.all([
@@ -100,7 +100,6 @@ export default function LeaderGenerateSchedule() {
     setPeople(p.filter((x) => x.active));
     setMinistries(m.filter((x) => x.active));
 
-    // carrega a escala do turno atual
     if (existingThisTurn) {
       setAssigned(existingThisTurn.assignments ?? []);
       setScheduleStatus(existingThisTurn.status);
@@ -109,11 +108,10 @@ export default function LeaderGenerateSchedule() {
       setScheduleStatus("empty");
     }
 
-    // monta mapa de conflitos por pessoa (mesmo dia)
     const map = new Map<string, ConflictInfo[]>();
 
     (allSameDay ?? []).forEach((s: Schedule) => {
-      const infos: ConflictInfo = {
+      const info: ConflictInfo = {
         status: s.status,
         ministryId: s.ministryId,
         serviceLabel: s.serviceLabel,
@@ -121,7 +119,7 @@ export default function LeaderGenerateSchedule() {
 
       (s.assignments ?? []).forEach((a) => {
         const prev = map.get(a.personId) ?? [];
-        prev.push(infos);
+        prev.push(info);
         map.set(a.personId, prev);
       });
     });
@@ -132,7 +130,6 @@ export default function LeaderGenerateSchedule() {
   useFocusEffect(
     useCallback(() => {
       loadSchedule();
-      // ✅ depende também do turno
     }, [safeServiceDayId, safeMinistryId, safeServiceLabel])
   );
 
@@ -145,30 +142,31 @@ export default function LeaderGenerateSchedule() {
      RULES
   ========================= */
 
-  const assignedForThisTurn = useMemo(() => {
-    // aqui, assigned já vem com ministryId, mas garantimos só por segurança
-    return (assigned ?? []).filter((x) => x.ministryId === safeMinistryId);
-  }, [assigned, safeMinistryId]);
+  const assignedForThisTurn = useMemo(
+    () =>
+      (assigned ?? []).filter((x) => x.ministryId === safeMinistryId),
+    [assigned, safeMinistryId]
+  );
 
-  const unavailablePersonIds = useMemo(() => {
-    return assignedForThisTurn.map((a) => a.personId);
-  }, [assignedForThisTurn]);
+  const unavailablePersonIds = useMemo(
+    () => assignedForThisTurn.map((a) => a.personId),
+    [assignedForThisTurn]
+  );
 
-  function buildWarnings(personId: string): {
-    blocked: boolean;
-    warningsText: string[];
-  } {
+  function buildWarnings(personId: string) {
     const infos = conflictsByPerson.get(personId) ?? [];
 
-    // remove o "conflito" do próprio turno/ministério atual (não faz sentido avisar dele mesmo)
     const relevant = infos.filter(
-      (i) => !(i.ministryId === safeMinistryId && i.serviceLabel === safeServiceLabel)
+      (i) =>
+        !(
+          i.ministryId === safeMinistryId &&
+          i.serviceLabel === safeServiceLabel
+        )
     );
 
     let blocked = false;
     const warningsText: string[] = [];
 
-    // A) outro ministério no mesmo dia
     const otherMinistryPublished = relevant.some(
       (i) => i.ministryId !== safeMinistryId && i.status === "published"
     );
@@ -176,17 +174,15 @@ export default function LeaderGenerateSchedule() {
       (i) => i.ministryId !== safeMinistryId && i.status === "draft"
     );
 
-    if (otherMinistryPublished) {
-      blocked = true; // 🔥 regra: published em outro ministério -> some da lista
-    } else if (otherMinistryDraft) {
+    if (otherMinistryPublished) blocked = true;
+    else if (otherMinistryDraft)
       warningsText.push("⚠️ Em rascunho em outro ministério hoje");
-    }
 
-    // B) outro turno no mesmo dia (qualquer ministério)
-    const otherTurn = relevant.some((i) => i.serviceLabel !== safeServiceLabel);
-    if (otherTurn) {
+    const otherTurn = relevant.some(
+      (i) => i.serviceLabel !== safeServiceLabel
+    );
+    if (otherTurn)
       warningsText.push("ℹ️ Já escalado em outro turno hoje");
-    }
 
     return { blocked, warningsText };
   }
@@ -194,22 +190,13 @@ export default function LeaderGenerateSchedule() {
   const availablePeople = useMemo(() => {
     if (!safeMinistryId) return [];
 
-    const base = people
+    return people
       .filter((p) => p.ministries.some((m) => m.ministryId === safeMinistryId))
-      .filter((p) => !unavailablePersonIds.includes(p.id));
-
-    const enriched: PersonWithFlags[] = base.map((p) => {
-      const { blocked, warningsText } = buildWarnings(p.id);
-      return {
-        ...p,
-        blocked,
-        warningsText,
-        warnDraftOtherMinistry: warningsText.some((t) => t.includes("rascunho")),
-        warnOtherTurn: warningsText.some((t) => t.includes("outro turno")),
-      };
-    });
-
-    return enriched
+      .filter((p) => !unavailablePersonIds.includes(p.id))
+      .map((p) => {
+        const { blocked, warningsText } = buildWarnings(p.id);
+        return { ...p, blocked, warningsText };
+      })
       .filter((p) => !p.blocked)
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [people, safeMinistryId, unavailablePersonIds, conflictsByPerson]);
@@ -219,7 +206,7 @@ export default function LeaderGenerateSchedule() {
   ========================= */
 
   function assignPerson(person: Person) {
-    if (!safeMinistryId) return;
+    if (isPublished || !safeMinistryId) return;
 
     setAssigned((prev) => [
       ...(prev ?? []),
@@ -228,12 +215,23 @@ export default function LeaderGenerateSchedule() {
   }
 
   function removePerson(personId: string) {
-    setAssigned((prev) => (prev ?? []).filter((x) => x.personId !== personId));
+    if (isPublished) return;
+
+    setAssigned((prev) =>
+      (prev ?? []).filter((x) => x.personId !== personId)
+    );
   }
 
   async function handleSaveDraft() {
-    if (!user) return;
-    if (!safeServiceDayId || !safeMinistryId || !safeServiceLabel || !date) return;
+    if (
+      isPublished ||
+      !user ||
+      !safeServiceDayId ||
+      !safeMinistryId ||
+      !safeServiceLabel ||
+      !date
+    )
+      return;
 
     await saveScheduleDraft({
       ministryId: safeMinistryId,
@@ -246,8 +244,6 @@ export default function LeaderGenerateSchedule() {
 
     setScheduleStatus("draft");
     setShowSavedModal(true);
-
-    // 🔥 recarrega conflitos e status
     await loadSchedule();
   }
 
@@ -263,9 +259,7 @@ export default function LeaderGenerateSchedule() {
     setScheduleStatus("published");
     setShowPublishModal(false);
 
-    router.push({
-      pathname: "/(protected)/(leader)/schedule",
-    });
+    router.push({ pathname: "/(protected)/(leader)/schedule" });
   }
 
   /* =========================
@@ -298,10 +292,18 @@ export default function LeaderGenerateSchedule() {
               {scheduleStatus === "published"
                 ? "Escala publicada"
                 : scheduleStatus === "draft"
-                  ? "Rascunho"
-                  : "Nenhuma escala criada"}
+                ? "Rascunho"
+                : "Nenhuma escala criada"}
             </Text>
           </View>
+
+          {isPublished && (
+            <View style={styles.lockedInfo}>
+              <Text style={styles.lockedText}>
+                🔒 Esta escala está publicada e não pode ser editada
+              </Text>
+            </View>
+          )}
 
           <Text style={styles.sectionTitle}>Pessoas escaladas</Text>
 
@@ -315,17 +317,21 @@ export default function LeaderGenerateSchedule() {
               return (
                 <View key={a.personId} style={styles.card}>
                   <Text style={styles.name}>{person.name}</Text>
-                  <Pressable onPress={() => removePerson(person.id)}>
-                    <Text style={styles.remove}>Remover</Text>
-                  </Pressable>
+                  {!isPublished && (
+                    <Pressable onPress={() => removePerson(person.id)}>
+                      <Text style={styles.remove}>Remover</Text>
+                    </Pressable>
+                  )}
                 </View>
               );
             })
           )}
 
-          <Pressable style={styles.saveBtn} onPress={handleSaveDraft}>
-            <Text style={styles.saveText}>Salvar como rascunho</Text>
-          </Pressable>
+          {!isPublished && (
+            <Pressable style={styles.saveBtn} onPress={handleSaveDraft}>
+              <Text style={styles.saveText}>Salvar como rascunho</Text>
+            </Pressable>
+          )}
 
           {scheduleStatus === "draft" && (
             <Pressable
@@ -338,29 +344,30 @@ export default function LeaderGenerateSchedule() {
 
           <Text style={styles.sectionTitle}>Pessoas disponíveis</Text>
 
-          {availablePeople.map((p) => (
-            <Pressable
-              key={p.id}
-              style={styles.card}
-              onPress={() => assignPerson(p)}
-            >
-              <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={styles.name}>{p.name}</Text>
+          {!isPublished &&
+            availablePeople.map((p) => (
+              <Pressable
+                key={p.id}
+                style={styles.card}
+                onPress={() => assignPerson(p)}
+              >
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={styles.name}>{p.name}</Text>
 
-                {p.warningsText && p.warningsText.length > 0 && (
-                  <View style={{ marginTop: 6 }}>
-                    {p.warningsText.map((w, idx) => (
-                      <Text key={idx} style={styles.warning}>
-                        {w}
-                      </Text>
-                    ))}
-                  </View>
-                )}
-              </View>
+                  {p.warningsText && p.warningsText.length > 0 && (
+                    <View style={{ marginTop: 6 }}>
+                      {p.warningsText.map((w, idx) => (
+                        <Text key={idx} style={styles.warning}>
+                          {w}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                </View>
 
-              <Text style={styles.add}>Adicionar</Text>
-            </Pressable>
-          ))}
+                <Text style={styles.add}>Adicionar</Text>
+              </Pressable>
+            ))}
         </View>
 
         {/* MODAIS */}
@@ -468,6 +475,18 @@ const styles = StyleSheet.create({
   statusDraft: { backgroundColor: "#FEF3C7" },
   statusEmpty: { backgroundColor: "#E5E7EB" },
   statusText: { fontWeight: "800", fontSize: 12 },
+
+  lockedInfo: {
+    backgroundColor: "#ECFDF5",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  lockedText: {
+    color: "#065F46",
+    fontWeight: "800",
+    fontSize: 13,
+  },
 
   overlay: {
     flex: 1,
