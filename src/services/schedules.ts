@@ -1,4 +1,3 @@
-// src/services/schedules.ts
 import {
   collection,
   doc,
@@ -26,16 +25,10 @@ export type Schedule = {
   id: string;
   ministryId: string;
   serviceDayId: string;
-
-  // 🔥 TURNO / CULTO (manhã, noite, etc.)
   serviceLabel: string;
-
-  // string livre para exibir (você está passando "domingo, 10 de ..." hoje)
   serviceDate: string;
-
   status: ScheduleStatus;
   assignments: ScheduleAssignment[];
-
   createdBy: string;
   createdAt?: any;
   updatedAt?: any;
@@ -46,6 +39,54 @@ export type Schedule = {
 ========================= */
 
 const COLLECTION = "schedules";
+
+/* =========================
+   INTERNAL – CONFLICT CHECK
+========================= */
+
+async function assertNoConflictSameDay(params: {
+  serviceDayId: string;
+  ministryId: string;
+  serviceLabel: string;
+  assignments: ScheduleAssignment[];
+}) {
+  const { serviceDayId, ministryId, serviceLabel, assignments } = params;
+
+  if (!serviceDayId || assignments.length === 0) return;
+
+  const personIds = assignments.map((a) => a.personId);
+
+  const q = query(
+    collection(db, COLLECTION),
+    where("serviceDayId", "==", serviceDayId)
+  );
+
+  const snap = await getDocs(q);
+
+  snap.docs.forEach((docSnap) => {
+    const s = docSnap.data() as Schedule;
+
+    // 🔥 IGNORA turnos DIFERENTES (permitido)
+    if (s.serviceLabel !== serviceLabel) {
+      return;
+    }
+
+    // 🔥 IGNORA a própria escala (mesmo ministério + mesmo turno)
+    if (
+      s.ministryId === ministryId &&
+      s.serviceLabel === serviceLabel
+    ) {
+      return;
+    }
+
+    // 🚫 BLOQUEIA: mesma pessoa no MESMO TURNO
+    (s.assignments ?? []).forEach((a) => {
+      if (personIds.includes(a.personId)) {
+        throw new Error("CONFLICT_SAME_TURN");
+      }
+    });
+  });
+}
 
 /* =========================
    SAVE / UPDATE DRAFT
@@ -68,17 +109,31 @@ export async function saveScheduleDraft(params: {
     createdBy,
   } = params;
 
-  if (!ministryId || !serviceDayId || !serviceLabel || !serviceDate || !createdBy) {
+  if (
+    !ministryId ||
+    !serviceDayId ||
+    !serviceLabel ||
+    !serviceDate ||
+    !createdBy
+  ) {
     throw new Error("Parâmetros inválidos para salvar escala");
   }
 
-  // ❗ Regra mínima: não permitir duplicados
+  // ❗ Regra mínima: não permitir duplicados no mesmo turno
   const unique = new Set(assignments.map((a) => a.personId));
   if (unique.size !== assignments.length) {
     throw new Error("Pessoa duplicada na escala");
   }
 
-  // ✅ Identifica por DIA + MINISTÉRIO + TURNO
+  // 🔒 REGRA FORTE: conflito no mesmo dia (backend)
+  await assertNoConflictSameDay({
+    serviceDayId,
+    ministryId,
+    serviceLabel,
+    assignments,
+  });
+
+  // Identifica por DIA + MINISTÉRIO + TURNO
   const q = query(
     collection(db, COLLECTION),
     where("ministryId", "==", ministryId),
@@ -126,7 +181,6 @@ export async function saveScheduleDraft(params: {
 
 /* =========================
    LIST BY MONTH
-   (por ministério + dias do mês)
 ========================= */
 
 export async function listSchedulesByMonth(params: {
@@ -151,7 +205,6 @@ export async function listSchedulesByMonth(params: {
 
 /* =========================
    LIST BY SERVICE DAY
-   (para conflitos no mesmo dia)
 ========================= */
 
 export async function listSchedulesByServiceDay(params: {
@@ -175,7 +228,7 @@ export async function listSchedulesByServiceDay(params: {
 }
 
 /* =========================
-   GET BY SERVICE (dia + turno + ministério)
+   GET BY SERVICE
 ========================= */
 
 export async function getScheduleByService(params: {

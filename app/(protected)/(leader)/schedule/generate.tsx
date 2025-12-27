@@ -72,6 +72,8 @@ export default function LeaderGenerateSchedule() {
   const [conflictsByPerson, setConflictsByPerson] = useState<
     Map<string, ConflictInfo[]>
   >(new Map());
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const safeServiceDayId = serviceDayId ?? "";
   const safeMinistryId = ministryId ?? "";
@@ -187,6 +189,20 @@ export default function LeaderGenerateSchedule() {
     return { blocked, warningsText };
   }
 
+  function handleUserError(err: any) {
+    if (!err?.message) {
+      setErrorMessage("Ocorreu um erro inesperado.");
+    } else if (err.message === "CONFLICT_SAME_TURN") {
+      setErrorMessage(
+        "Essa pessoa já está escalada neste mesmo turno em outro ministério."
+      );
+    } else {
+      setErrorMessage("Não foi possível salvar a escala.");
+    }
+
+    setErrorModalVisible(true);
+  }
+
   const availablePeople = useMemo(() => {
     if (!safeMinistryId) return [];
 
@@ -233,18 +249,22 @@ export default function LeaderGenerateSchedule() {
     )
       return;
 
-    await saveScheduleDraft({
-      ministryId: safeMinistryId,
-      serviceDayId: safeServiceDayId,
-      serviceLabel: safeServiceLabel,
-      serviceDate: date,
-      assignments: assignedForThisTurn,
-      createdBy: user.personId,
-    });
+    try {
+      await saveScheduleDraft({
+        ministryId: safeMinistryId,
+        serviceDayId: safeServiceDayId,
+        serviceLabel: safeServiceLabel,
+        serviceDate: date,
+        assignments: assignedForThisTurn,
+        createdBy: user.personId,
+      });
 
-    setScheduleStatus("draft");
-    setShowSavedModal(true);
-    await loadSchedule();
+      setScheduleStatus("draft");
+      setShowSavedModal(true);
+      await loadSchedule();
+    } catch (err) {
+      handleUserError(err);
+    }
   }
 
   async function handlePublish() {
@@ -292,8 +312,8 @@ export default function LeaderGenerateSchedule() {
               {scheduleStatus === "published"
                 ? "Escala publicada"
                 : scheduleStatus === "draft"
-                ? "Rascunho"
-                : "Nenhuma escala criada"}
+                  ? "Rascunho"
+                  : "Nenhuma escala criada"}
             </Text>
           </View>
 
@@ -407,6 +427,25 @@ export default function LeaderGenerateSchedule() {
                 onPress={() => setShowPublishModal(false)}
               >
                 <Text style={styles.modalSecondaryText}>Cancelar</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={errorModalVisible} transparent animationType="fade">
+          <View style={styles.overlay}>
+            <View style={styles.modal}>
+              <Text style={styles.modalTitle}>Atenção</Text>
+
+              <Text style={styles.modalText}>
+                {errorMessage}
+              </Text>
+
+              <Pressable
+                style={styles.modalBtn}
+                onPress={() => setErrorModalVisible(false)}
+              >
+                <Text style={styles.modalBtnText}>Entendi</Text>
               </Pressable>
             </View>
           </View>
