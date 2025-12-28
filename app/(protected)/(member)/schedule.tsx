@@ -27,36 +27,59 @@ const TURN_ORDER: Record<string, number> = {
     noite: 3,
 };
 
+const MONTHS: Record<string, number> = {
+    janeiro: 0,
+    fevereiro: 1,
+    março: 2,
+    marco: 2,
+    abril: 3,
+    maio: 4,
+    junho: 5,
+    julho: 6,
+    agosto: 7,
+    setembro: 8,
+    outubro: 9,
+    novembro: 10,
+    dezembro: 11,
+};
+
 /* =========================
    HELPERS
 ========================= */
 
 function getServiceDayTime(s: any): number {
-    // 1️⃣ Firestore Timestamp
-    if (s.serviceDayDate?.toDate) {
-        const d = s.serviceDayDate.toDate();
-        d.setHours(0, 0, 0, 0);
-        return d.getTime();
+    if (!s.serviceDate || typeof s.serviceDate !== "string") {
+        return 0;
     }
 
-    // 2️⃣ ISO string
-    if (typeof s.serviceDayDate === "string") {
-        const t = Date.parse(s.serviceDayDate);
-        if (!Number.isNaN(t)) return t;
+    // ex: "sábado, 10 de janeiro"
+    const match = s.serviceDate
+        .toLowerCase()
+        .match(/(\d{1,2})\s+de\s+([a-zç]+)/i);
+
+    if (!match) return 0;
+
+    const day = Number(match[1]);
+    const monthName = match[2];
+    const month = MONTHS[monthName];
+
+    if (!Number.isFinite(day) || month === undefined) {
+        return 0;
     }
 
-    // 3️⃣ fallback legado
-    if (typeof s.serviceDate === "string") {
-        const m = s.serviceDate.match(/\b(\d{1,2})\s+de\b/i);
-        if (m?.[1]) {
-            const day = Number(m[1]);
-            if (Number.isFinite(day)) {
-                return day * 24 * 60 * 60 * 1000;
-            }
-        }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let date = new Date(today.getFullYear(), month, day);
+    date.setHours(0, 0, 0, 0);
+
+    // se já passou neste ano → próximo ano
+    if (date.getTime() < today.getTime()) {
+        date = new Date(today.getFullYear() + 1, month, day);
+        date.setHours(0, 0, 0, 0);
     }
 
-    return 0;
+    return date.getTime();
 }
 
 /* =========================
@@ -75,6 +98,8 @@ export default function MemberSchedule() {
 
     useFocusEffect(
         useCallback(() => {
+            let active = true;
+
             async function load() {
                 if (!user) return;
 
@@ -84,11 +109,17 @@ export default function MemberSchedule() {
                     personId: user.personId,
                 });
 
-                setSchedules(data);
-                setLoading(false);
+                if (active) {
+                    setSchedules(data);
+                    setLoading(false);
+                }
             }
 
             load();
+
+            return () => {
+                active = false;
+            };
         }, [user])
     );
 
@@ -103,24 +134,29 @@ export default function MemberSchedule() {
     }, []);
 
     /* =========================
-       IDENTIFICA PRÓXIMO CULTO
+       PRÓXIMO DIA DE CULTO
     ========================= */
 
     const nextServiceDayTime = useMemo(() => {
         const future = schedules
             .map((s) => getServiceDayTime(s))
-            .filter((t) => t >= today)
+            .filter((time) => time >= today)
             .sort((a, b) => a - b);
 
         return future.length > 0 ? future[0] : null;
     }, [schedules, today]);
 
+    /* =========================
+       ESTE É O AJUSTE CRÍTICO
+    ========================= */
+
     function isNextService(s: any) {
+        if (!nextServiceDayTime) return false;
         return getServiceDayTime(s) === nextServiceDayTime;
     }
 
     /* =========================
-       ORDENAÇÃO FINAL (🔥 AQUI)
+       ORDENAÇÃO FINAL
     ========================= */
 
     const sortedSchedules = useMemo(() => {
@@ -128,16 +164,16 @@ export default function MemberSchedule() {
             const aIsNext = isNextService(a);
             const bIsNext = isNextService(b);
 
-            // 🔥 1) Próximo culto SEMPRE no topo
+            // 1️⃣ todos do próximo dia sobem
             if (aIsNext && !bIsNext) return -1;
             if (!aIsNext && bIsNext) return 1;
 
-            // 📅 2) Depois ordena por dia
+            // 2️⃣ ordena por data
             const timeA = getServiceDayTime(a);
             const timeB = getServiceDayTime(b);
             if (timeA !== timeB) return timeA - timeB;
 
-            // ⏰ 3) Depois por turno
+            // 3️⃣ ordena por turno
             const orderA = TURN_ORDER[a.serviceLabel?.toLowerCase()] ?? 99;
             const orderB = TURN_ORDER[b.serviceLabel?.toLowerCase()] ?? 99;
             return orderA - orderB;
@@ -217,18 +253,23 @@ export default function MemberSchedule() {
                                 style={[
                                     styles.card,
                                     next && styles.cardNext,
+                                    !next && styles.cardDisabled,
                                 ]}
                             >
-                                {/* HEADER */}
                                 <View style={styles.cardHeader}>
-                                    <Text style={styles.title}>
+                                    <Text
+                                        style={[
+                                            styles.title,
+                                            next && styles.titleNext,
+                                        ]}
+                                    >
                                         {s.serviceLabel}
                                     </Text>
 
                                     {next && (
                                         <View style={styles.nextBadge}>
                                             <Text style={styles.nextBadgeText}>
-                                                PRÓXIMO
+                                                PRÓXIMO CULTO
                                             </Text>
                                         </View>
                                     )}
@@ -238,7 +279,6 @@ export default function MemberSchedule() {
                                     {s.serviceDate}
                                 </Text>
 
-                                {/* AÇÕES */}
                                 {s.attendance === "pending" && next && (
                                     <View style={styles.actions}>
                                         <Pressable
@@ -251,7 +291,6 @@ export default function MemberSchedule() {
                                         </Pressable>
 
                                         <Pressable
-                                            style={styles.decline}
                                             onPress={() => decline(s.id)}
                                         >
                                             <Text style={styles.declineText}>
@@ -309,6 +348,10 @@ const styles = StyleSheet.create({
         backgroundColor: "#F0FDF4",
     },
 
+    cardDisabled: {
+        opacity: 0.55,
+    },
+
     cardHeader: {
         flexDirection: "row",
         justifyContent: "space-between",
@@ -316,6 +359,11 @@ const styles = StyleSheet.create({
     },
 
     title: { fontWeight: "800" },
+
+    titleNext: {
+        fontSize: 18,
+        fontWeight: "900",
+    },
 
     date: {
         fontSize: 13,
@@ -340,15 +388,23 @@ const styles = StyleSheet.create({
 
     confirm: {
         backgroundColor: "#16A34A",
-        paddingVertical: 12,
-        borderRadius: 12,
+        paddingVertical: 14,
+        borderRadius: 14,
         alignItems: "center",
     },
 
-    confirmText: { color: "#FFF", fontWeight: "800" },
+    confirmText: {
+        color: "#FFF",
+        fontWeight: "900",
+        fontSize: 16,
+    },
 
-    decline: { paddingVertical: 10, alignItems: "center" },
-    declineText: { color: "#DC2626", fontWeight: "800" },
+    declineText: {
+        color: "#DC2626",
+        fontWeight: "800",
+        textAlign: "center",
+        paddingVertical: 8,
+    },
 
     locked: {
         fontSize: 12,

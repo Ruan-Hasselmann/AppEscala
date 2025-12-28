@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -378,4 +379,21 @@ export async function replaceScheduleAssignment(params: {
     },
     { merge: true }
   );
+}
+
+export async function deleteSchedulesByServiceDay(serviceDayId: string) {
+  if (!serviceDayId) return;
+
+  const q = query(
+    collection(db, "schedules"),
+    where("serviceDayId", "==", serviceDayId)
+  );
+
+  const snap = await getDocs(q);
+
+  const deletions = snap.docs.map((d) =>
+    deleteDoc(doc(db, "schedules", d.id))
+  );
+
+  await Promise.all(deletions);
 }

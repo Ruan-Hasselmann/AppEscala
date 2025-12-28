@@ -22,6 +22,7 @@ import {
     getServicesByServiceDay,
     Service,
 } from "@/src/services/services";
+import { deleteSchedulesByServiceDay } from "../services/schedules";
 
 /* =========================
    TYPES
@@ -334,6 +335,7 @@ export function AdminServiceDayModal({
                                 onPress={async () => {
                                     if (!serviceDay) return;
 
+                                    await deleteSchedulesByServiceDay(serviceDay.id)
                                     await deleteServiceDay(serviceDay.id);
                                     setConfirmRemove(false);
                                     await onSaved();
