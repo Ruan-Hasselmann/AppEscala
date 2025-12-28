@@ -1,9 +1,9 @@
 import { AppHeader } from "@/src/components/AppHeader";
 import { AppScreen } from "@/src/components/AppScreen";
 import {
-    CalendarDashboard,
-    CalendarDayData,
-    CalendarServiceStatus,
+  CalendarDashboard,
+  CalendarDayData,
+  CalendarServiceStatus,
 } from "@/src/components/CalendarDashboard";
 import { useAuth } from "@/src/contexts/AuthContext";
 
@@ -14,15 +14,25 @@ import { getServiceDaysByMonth } from "@/src/services/serviceDays";
 import { getServicesByServiceDay } from "@/src/services/services";
 
 import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    Modal,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
+
+/* =========================
+   HELPERS
+========================= */
+
+function statusLabel(status: CalendarServiceStatus) {
+  if (status === "published") return "Publicado";
+  if (status === "draft") return "Rascunho";
+  return "Sem escala";
+}
 
 /* =========================
    SCREEN
@@ -32,23 +42,34 @@ export default function MemberDashboard() {
   const { user, logout } = useAuth();
 
   const [month, setMonth] = useState(new Date());
-  const [calendarData, setCalendarData] =
-    useState<CalendarDayData[]>([]);
-  const [selectedDay, setSelectedDay] =
-    useState<CalendarDayData | null>(null);
+  const [calendarData, setCalendarData] = useState<CalendarDayData[]>([]);
+  const [selectedDay, setSelectedDay] = useState<CalendarDayData | null>(null);
 
   const [ministries, setMinistries] = useState<Ministry[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
+
+  /* =========================
+     INDEXES
+  ========================= */
+
+  const ministryIndex = useMemo(() => {
+    const map = new Map<string, Ministry>();
+    ministries.forEach((m) => map.set(m.id, m));
+    return map;
+  }, [ministries]);
+
+  const peopleIndex = useMemo(() => {
+    const map = new Map<string, Person>();
+    people.forEach((p) => map.set(p.id, p));
+    return map;
+  }, [people]);
 
   /* =========================
      LOAD BASE
   ========================= */
 
   async function loadBase() {
-    const [m, p] = await Promise.all([
-      listMinistries(),
-      listPeople(),
-    ]);
+    const [m, p] = await Promise.all([listMinistries(), listPeople()]);
 
     setMinistries(m.filter((x) => x.active));
     setPeople(p.filter((x) => x.active));
@@ -60,14 +81,14 @@ export default function MemberDashboard() {
 
   async function loadCalendar() {
     const days = await getServiceDaysByMonth(month);
-    if (days.length === 0) {
+    if (days.length === 0 || ministries.length === 0) {
       setCalendarData([]);
       return;
     }
 
     const serviceDayIds = days.map((d) => d.id);
 
-    // 🔥 todas as escalas do mês
+    // todas as escalas do mês (todos os ministérios)
     const schedulesByMinistry = await Promise.all(
       ministries.map((m) =>
         listSchedulesByMonth({
@@ -79,38 +100,52 @@ export default function MemberDashboard() {
 
     const schedules = schedulesByMinistry.flat();
 
-    // indexa por DIA + TURNO
+    // indexa por DIA + TURNO + MINISTÉRIO (pra evitar colisão)
     const scheduleIndex = new Map<
       string,
       {
         status: CalendarServiceStatus;
-        people: { name: string; ministry: string }[];
+        scheduleId: string;
+        people: {
+          id: string;
+          name: string;
+          role: string;
+          attendance?: "pending" | "confirmed" | "declined";
+        }[];
       }
     >();
 
     schedules.forEach((s: any) => {
-      const ministry = ministries.find(
-        (m) => m.id === s.ministryId
-      );
-
       const assignments = s.assignments ?? [];
 
       const mappedPeople = assignments
-        .map((a: { personId: string }) => {
-          const p = people.find((x) => x.id === a.personId);
+        .map((a: { personId: string; attendance?: string }) => {
+          const p = peopleIndex.get(a.personId);
           if (!p) return null;
 
           return {
+            id: p.id,
             name: p.name,
-            ministry: ministry?.name ?? "",
+            role: "Membro",
+            attendance:
+              (a.attendance as "pending" | "confirmed" | "declined") ??
+              "pending",
           };
         })
-        .filter(Boolean) as { name: string; ministry: string }[];
+        .filter(
+          (x: any): x is {
+            id: string;
+            name: string;
+            role: string;
+            attendance?: "pending" | "confirmed" | "declined";
+          } => Boolean(x)
+        );
 
-      const key = `${s.serviceDayId}__${s.serviceLabel}`;
+      const key = `${s.serviceDayId}__${s.serviceLabel}__${s.ministryId}`;
 
       scheduleIndex.set(key, {
         status: s.status,
+        scheduleId: s.id,
         people: mappedPeople,
       });
     });
@@ -119,22 +154,28 @@ export default function MemberDashboard() {
       days.map(async (day) => {
         const services = await getServicesByServiceDay(day.id);
 
-        return {
-          date: day.date,
-          serviceDayId: day.id,
-          services: services.map((service) => {
-            const key = `${day.id}__${service.label}`;
+        // aqui a gente “achata” tudo em uma lista:
+        // para cada turno, mostramos um item por ministério
+        const servicesFlat = services.flatMap((service) =>
+          ministries.map((m) => {
+            const key = `${day.id}__${service.label}__${m.id}`;
             const found = scheduleIndex.get(key);
 
             return {
               turno: service.label,
-              ministry: "",
-              status: found
-                ? found.status
-                : ("empty" as CalendarServiceStatus),
+              ministry: m.name,
+              ministryId: m.id,
+              scheduleId: found?.scheduleId ?? "",
+              status: found?.status ?? ("empty" as CalendarServiceStatus),
               people: found?.people,
             };
-          }),
+          })
+        );
+
+        return {
+          date: day.date,
+          serviceDayId: day.id,
+          services: servicesFlat,
         };
       })
     );
@@ -152,9 +193,10 @@ export default function MemberDashboard() {
 
   useFocusEffect(
     useCallback(() => {
-      if (ministries.length === 0) return;
+      // só tenta carregar quando já tiver base
+      if (ministries.length === 0 || people.length === 0) return;
       loadCalendar();
-    }, [ministries, month])
+    }, [ministries, people, month])
   );
 
   /* =========================
@@ -164,8 +206,8 @@ export default function MemberDashboard() {
   return (
     <AppScreen>
       <AppHeader
-        title="Minha Escala"
-        subtitle={`${user?.name} · Membro`}
+        title="Minha escala"
+        subtitle={`${user?.name ?? ""} · Membro`}
         onLogout={logout}
       />
 
@@ -173,34 +215,19 @@ export default function MemberDashboard() {
       <View style={styles.monthHeader}>
         <Pressable
           onPress={() =>
-            setMonth(
-              new Date(
-                month.getFullYear(),
-                month.getMonth() - 1,
-                1
-              )
-            )
+            setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))
           }
         >
           <Text style={styles.nav}>◀</Text>
         </Pressable>
 
         <Text style={styles.monthTitle}>
-          {month.toLocaleDateString("pt-BR", {
-            month: "long",
-            year: "numeric",
-          })}
+          {month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
         </Text>
 
         <Pressable
           onPress={() =>
-            setMonth(
-              new Date(
-                month.getFullYear(),
-                month.getMonth() + 1,
-                1
-              )
-            )
+            setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))
           }
         >
           <Text style={styles.nav}>▶</Text>
@@ -229,44 +256,39 @@ export default function MemberDashboard() {
               })}
             </Text>
 
-            {selectedDay?.services.map((s, i) => (
-              <View key={i} style={styles.serviceBlock}>
-                <View style={styles.serviceHeader}>
-                  <Text style={styles.turno}>{s.turno}</Text>
-                  <Text
-                    style={[
-                      styles.status,
-                      s.status === "published" &&
-                        styles.published,
-                      s.status === "draft" && styles.draft,
-                    ]}
-                  >
-                    {s.status === "published"
-                      ? "Publicado"
-                      : s.status === "draft"
-                      ? "Rascunho"
-                      : "Sem escala"}
-                  </Text>
-                </View>
-
-                {s.people && s.people.length > 0 ? (
-                  s.people.map((p, idx) => (
-                    <Text key={idx} style={styles.person}>
-                      • {p.name} — {p.ministry}
+            <ScrollView style={{ maxHeight: 420 }}>
+              {selectedDay?.services.map((s, i) => (
+                <View key={`${s.turno}-${s.ministryId}-${i}`} style={styles.serviceBlock}>
+                  <View style={styles.serviceHeader}>
+                    <Text style={styles.turno}>
+                      {s.turno} · {s.ministry}
                     </Text>
-                  ))
-                ) : (
-                  <Text style={styles.empty}>
-                    Nenhuma pessoa escalada
-                  </Text>
-                )}
-              </View>
-            ))}
 
-            <Pressable
-              style={styles.close}
-              onPress={() => setSelectedDay(null)}
-            >
+                    <Text
+                      style={[
+                        styles.status,
+                        s.status === "published" && styles.published,
+                        s.status === "draft" && styles.draft,
+                      ]}
+                    >
+                      {statusLabel(s.status)}
+                    </Text>
+                  </View>
+
+                  {s.people && s.people.length > 0 ? (
+                    s.people.map((p, idx) => (
+                      <Text key={`${p.id}-${idx}`} style={styles.person}>
+                        • {p.name}
+                      </Text>
+                    ))
+                  ) : (
+                    <Text style={styles.empty}>Nenhuma pessoa escalada</Text>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+
+            <Pressable style={styles.close} onPress={() => setSelectedDay(null)}>
               <Text style={styles.closeText}>Fechar</Text>
             </Pressable>
           </View>
@@ -290,11 +312,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 8,
   },
+
   monthTitle: {
     fontSize: 18,
     fontWeight: "800",
     textTransform: "capitalize",
   },
+
   nav: { fontSize: 28, fontWeight: "800" },
 
   overlay: {
@@ -302,17 +326,21 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "center",
     alignItems: "center",
+    padding: 20,
   },
+
   modal: {
-    width: "85%",
+    width: "100%",
+    maxWidth: 520,
     backgroundColor: "#FFF",
     borderRadius: 20,
     padding: 20,
-    maxHeight: "80%",
+    maxHeight: "85%",
   },
+
   modalTitle: {
     fontSize: 18,
-    fontWeight: "800",
+    fontWeight: "900",
     marginBottom: 12,
     textTransform: "capitalize",
   },
@@ -328,11 +356,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 4,
+    gap: 12,
   },
 
-  turno: { fontWeight: "800" },
+  turno: { fontWeight: "800", flex: 1 },
 
-  status: { fontWeight: "800" },
+  status: { fontWeight: "900" },
   published: { color: "#16A34A" },
   draft: { color: "#F59E0B" },
 
@@ -340,12 +369,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginLeft: 8,
     color: "#374151",
+    marginTop: 2,
   },
 
   empty: {
     fontSize: 12,
     color: "#6B7280",
     marginLeft: 8,
+    fontStyle: "italic",
   },
 
   close: {
@@ -355,5 +386,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#111827",
     alignItems: "center",
   },
+
   closeText: { color: "#FFF", fontWeight: "800" },
 });

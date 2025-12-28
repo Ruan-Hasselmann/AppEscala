@@ -1,5 +1,3 @@
-// app/(protected)/(admin)/dashboard.tsx
-
 import { AppHeader } from "@/src/components/AppHeader";
 import { AppScreen } from "@/src/components/AppScreen";
 import {
@@ -11,9 +9,12 @@ import { DayOverviewModal } from "@/src/components/DayOverviewModal";
 import { useAuth } from "@/src/contexts/AuthContext";
 
 import { listMinistries, Ministry } from "@/src/services/ministries";
-import { listPeople } from "@/src/services/people";
+import { listPeople, Person } from "@/src/services/people";
 import { listSchedulesByMonth } from "@/src/services/schedules";
-import { getServiceDaysByMonth, ServiceDay } from "@/src/services/serviceDays";
+import {
+  getServiceDaysByMonth,
+  ServiceDay,
+} from "@/src/services/serviceDays";
 import { getServicesByServiceDay } from "@/src/services/services";
 
 import { useFocusEffect } from "expo-router";
@@ -43,16 +44,16 @@ async function mapAdminCalendarData(params: {
   const serviceDayIds = serviceDays.map((d) => d.id);
 
   /* =========================
-     BUSCA TODAS AS PESSOAS
+     PESSOAS
   ========================= */
 
   const people = await listPeople();
-  const peopleIndex = new Map(
+  const peopleIndex = new Map<string, Person>(
     people.map((p) => [p.id, p])
   );
 
   /* =========================
-     BUSCA TODAS AS ESCALAS
+     ESCALAS
   ========================= */
 
   const schedulesByMinistry = await Promise.all(
@@ -67,14 +68,20 @@ async function mapAdminCalendarData(params: {
   const schedules = schedulesByMinistry.flat();
 
   /* =========================
-     INDEX POR DIA + TURNO + MINISTÉRIO
+     INDEX (DIA + TURNO + MINISTÉRIO)
   ========================= */
 
   const scheduleIndex = new Map<
     string,
     {
+      scheduleId: string;
       status: CalendarServiceStatus;
-      people: { name: string; role: string }[];
+      people: {
+        id: string;
+        name: string;
+        role: string;
+        attendance: "pending" | "confirmed" | "declined";
+      }[];
     }
   >();
 
@@ -88,22 +95,35 @@ async function mapAdminCalendarData(params: {
           if (!p) return null;
 
           return {
+            id: p.id,
             name: p.name,
             role: "Membro",
+            attendance: (a.attendance ?? "pending") as
+              | "pending"
+              | "confirmed"
+              | "declined",
           };
         })
         .filter(
-          (p): p is { name: string; role: string } => p !== null
+          (
+            p
+          ): p is {
+            id: string;
+            name: string;
+            role: string;
+            attendance: "pending" | "confirmed" | "declined";
+          } => p !== null
         ) ?? [];
 
     scheduleIndex.set(key, {
+      scheduleId: s.id,
       status: s.status,
       people,
     });
   });
 
   /* =========================
-     MONTA CALENDÁRIO FINAL
+     CALENDÁRIO FINAL
   ========================= */
 
   return Promise.all(
@@ -119,9 +139,13 @@ async function mapAdminCalendarData(params: {
             const found = scheduleIndex.get(key);
 
             return {
-              turno: service.label,        // manhã / noite / custom
-              ministry: ministry.name,     // projeção / transmissão
-              status: found?.status ?? "empty",
+              turno: service.label,
+              ministry: ministry.name,
+              ministryId: ministry.id,
+              scheduleId: found?.scheduleId ?? "",
+              status:
+                found?.status ??
+                ("empty" as CalendarServiceStatus),
               people: found?.people,
             };
           })
@@ -247,7 +271,7 @@ export default function AdminDashboard() {
           {/* CALENDÁRIO */}
           {loading ? (
             <Text style={styles.loading}>
-              Carregando calendário...
+              Carregando calendário…
             </Text>
           ) : (
             <CalendarDashboard
@@ -259,7 +283,7 @@ export default function AdminDashboard() {
         </View>
       </ScrollView>
 
-      {/* MODAL DO DIA (ADMIN) */}
+      {/* MODAL DO DIA */}
       <DayOverviewModal
         visible={!!selectedDay}
         day={selectedDay}
@@ -274,9 +298,7 @@ export default function AdminDashboard() {
 ========================= */
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-  },
+  container: { padding: 16 },
 
   monthHeader: {
     flexDirection: "row",

@@ -29,55 +29,60 @@ import {
 ========================= */
 
 async function mapToCalendarData(params: {
-  serviceDays: ServiceDay[];
-  ministryId: string;
+    serviceDays: ServiceDay[];
+    ministryId: string;
+    ministryName: string;
 }): Promise<CalendarDayData[]> {
-  const { serviceDays, ministryId } = params;
+    const { serviceDays, ministryId, ministryName } = params;
 
-  if (serviceDays.length === 0) return [];
+    if (serviceDays.length === 0) return [];
 
-  const serviceDayIds = serviceDays.map((d) => d.id);
+    const serviceDayIds = serviceDays.map((d) => d.id);
 
-  // 🔥 agora traz TODAS as escalas (por turno)
-  const schedules = await listSchedulesByMonth({
-    ministryId,
-    serviceDayIds,
-  });
+    // traz escalas do ministério no mês (por turno)
+    const schedules = await listSchedulesByMonth({
+        ministryId,
+        serviceDayIds,
+    });
 
-  // 🔥 indexa por DIA + TURNO
-  const scheduleIndex = new Map<
-    string,
-    CalendarServiceStatus
-  >();
+    // indexa por DIA + TURNO => status + scheduleId
+    const scheduleIndex = new Map<
+        string,
+        { status: CalendarServiceStatus; scheduleId: string }
+    >();
 
-  schedules.forEach((s) => {
-    const key = `${s.serviceDayId}__${s.serviceLabel}`;
-    scheduleIndex.set(key, s.status);
-  });
+    schedules.forEach((s: any) => {
+        const key = `${s.serviceDayId}__${s.serviceLabel}`;
+        scheduleIndex.set(key, {
+            status: s.status,
+            scheduleId: s.id,
+        });
+    });
 
-  // 🔥 busca turnos (manhã / noite / etc)
-  const servicesByDay = await Promise.all(
-    serviceDays.map(async (day) => ({
-      day,
-      services: await getServicesByServiceDay(day.id),
-    }))
-  );
+    // turnos (manhã/noite/etc) por dia
+    const servicesByDay = await Promise.all(
+        serviceDays.map(async (day) => ({
+            day,
+            services: await getServicesByServiceDay(day.id),
+        }))
+    );
 
-  return servicesByDay.map(({ day, services }) => ({
-    serviceDayId: day.id,
-    date: day.date,
-    services: services.map((service) => {
-      const key = `${day.id}__${service.label}`;
+    return servicesByDay.map(({ day, services }) => ({
+        serviceDayId: day.id,
+        date: day.date,
+        services: services.map((service) => {
+            const key = `${day.id}__${service.label}`;
+            const found = scheduleIndex.get(key);
 
-      return {
-        turno: service.label,
-        ministry: "", // não usado nesta tela
-        status:
-          scheduleIndex.get(key) ??
-          ("empty" as CalendarServiceStatus),
-      };
-    }),
-  }));
+            return {
+                turno: service.label,
+                ministry: ministryName,
+                ministryId,
+                scheduleId: found?.scheduleId ?? "",
+                status: found?.status ?? ("empty" as CalendarServiceStatus),
+            };
+        }),
+    }));
 }
 
 /* =========================
@@ -89,25 +94,19 @@ export default function LeaderSchedule() {
 
     const [month, setMonth] = useState(() => {
         const now = new Date();
-        return new Date(
-            now.getFullYear(),
-            now.getMonth() + 1,
-            1
-        );
+        return new Date(now.getFullYear(), now.getMonth() + 1, 1);
     });
 
-    const [calendarData, setCalendarData] =
-        useState<CalendarDayData[]>([]);
-    const [selectedDay, setSelectedDay] =
-        useState<CalendarDayData | null>(null);
-    const [selectedTurno, setSelectedTurno] =
-        useState<string | null>(null);
+    const [calendarData, setCalendarData] = useState<CalendarDayData[]>([]);
+    const [selectedDay, setSelectedDay] = useState<CalendarDayData | null>(null);
+    const [selectedTurno, setSelectedTurno] = useState<string | null>(null);
 
     const [ministries, setMinistries] = useState<Ministry[]>([]);
     const [person, setPerson] = useState<Person | null>(null);
 
-    const [selectedMinistryId, setSelectedMinistryId] =
-        useState<string | null>(null);
+    const [selectedMinistryId, setSelectedMinistryId] = useState<string | null>(
+        null
+    );
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [loadingCalendar, setLoadingCalendar] = useState(true);
 
@@ -118,10 +117,7 @@ export default function LeaderSchedule() {
     async function loadBase() {
         if (!user) return;
 
-        const [p, m] = await Promise.all([
-            listPeople(),
-            listMinistries(),
-        ]);
+        const [p, m] = await Promise.all([listPeople(), listMinistries()]);
 
         setPerson(p.find((x) => x.id === user.personId) ?? null);
         setMinistries(m.filter((x) => x.active));
@@ -136,12 +132,13 @@ export default function LeaderSchedule() {
             .filter(Boolean) as Ministry[];
     }, [person, ministries]);
 
-    async function loadCalendar() {
-        const ministry = leaderMinistries.find(
-            (m) => m.id === selectedMinistryId
-        );
+    const selectedMinistry = useMemo(() => {
+        return leaderMinistries.find((m) => m.id === selectedMinistryId) ?? null;
+    }, [leaderMinistries, selectedMinistryId]);
 
-        if (!ministry) {
+    async function loadCalendar() {
+        if (!selectedMinistryId || !selectedMinistry) {
+            setCalendarData([]);
             setLoadingCalendar(false);
             return;
         }
@@ -152,7 +149,8 @@ export default function LeaderSchedule() {
 
         const calendar = await mapToCalendarData({
             serviceDays: days,
-            ministryId: selectedMinistryId!,
+            ministryId: selectedMinistryId,
+            ministryName: selectedMinistry.name,
         });
 
         setCalendarData(calendar);
@@ -161,22 +159,19 @@ export default function LeaderSchedule() {
 
     useEffect(() => {
         loadBase();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
         if (leaderMinistries.length > 0 && !selectedMinistryId) {
             setSelectedMinistryId(leaderMinistries[0].id);
         }
-    }, [leaderMinistries]);
+    }, [leaderMinistries, selectedMinistryId]);
 
     useFocusEffect(
         useCallback(() => {
             loadCalendar();
-        }, [selectedMinistryId, month])
-    );
-
-    const selectedMinistry = leaderMinistries.find(
-        (m) => m.id === selectedMinistryId
+        }, [selectedMinistryId, selectedMinistry?.name, month])
     );
 
     /* =========================
@@ -186,21 +181,22 @@ export default function LeaderSchedule() {
     return (
         <AppScreen>
             <AppHeader
-                title={`Gerenciar Escala · ${selectedMinistry?.name ?? ""}`}
-                subtitle={`${user?.name} · Líder`}
+                title={`Gerenciar escala · ${selectedMinistry?.name ?? ""}`}
+                subtitle={`${user?.name ?? ""} · Líder`}
                 onLogout={logout}
             />
 
             {/* SELECT DE MINISTÉRIO */}
             {leaderMinistries.length > 1 && (
                 <View style={styles.dropdownWrapper}>
-                    <Text style={styles.title}>Selecione o ministerio</Text>
+                    <Text style={styles.title}>Selecione o ministério</Text>
+
                     <Pressable
                         style={styles.dropdown}
                         onPress={() => setDropdownOpen((v) => !v)}
                     >
                         <Text style={styles.dropdownText}>
-                            {selectedMinistry?.name}
+                            {selectedMinistry?.name ?? "Selecione"}
                         </Text>
                         <Text style={styles.chevron}> ▾</Text>
                     </Pressable>
@@ -222,38 +218,24 @@ export default function LeaderSchedule() {
                     )}
                 </View>
             )}
+
             {/* HEADER DO MÊS */}
             <View style={styles.monthHeader}>
                 <Pressable
                     onPress={() =>
-                        setMonth(
-                            new Date(
-                                month.getFullYear(),
-                                month.getMonth() - 1,
-                                1
-                            )
-                        )
+                        setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))
                     }
                 >
                     <Text style={styles.nav}>◀</Text>
                 </Pressable>
 
                 <Text style={styles.monthTitle}>
-                    {month.toLocaleDateString("pt-BR", {
-                        month: "long",
-                        year: "numeric",
-                    })}
+                    {month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
                 </Text>
 
                 <Pressable
                     onPress={() =>
-                        setMonth(
-                            new Date(
-                                month.getFullYear(),
-                                month.getMonth() + 1,
-                                1
-                            )
-                        )
+                        setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))
                     }
                 >
                     <Text style={styles.nav}>▶</Text>
@@ -263,14 +245,15 @@ export default function LeaderSchedule() {
             <ScrollView>
                 <View style={styles.container}>
                     {loadingCalendar ? (
-                        <Text style={styles.loading}>
-                            Carregando calendário...
-                        </Text>
+                        <Text style={styles.loading}>Carregando calendário…</Text>
                     ) : (
                         <CalendarDashboard
                             month={month}
                             data={calendarData}
-                            onDayPress={(day) => setSelectedDay(day)}
+                            onDayPress={(day) => {
+                                setSelectedDay(day);
+                                setSelectedTurno(null);
+                            }}
                         />
                     )}
                 </View>
@@ -288,25 +271,21 @@ export default function LeaderSchedule() {
                             })}
                         </Text>
 
-                        <Text style={styles.modalSubtitle}>
-                            Selecione o turno
-                        </Text>
+                        <Text style={styles.modalSubtitle}>Selecione o turno</Text>
 
                         {selectedDay?.services.map((service) => (
                             <Pressable
                                 key={service.turno}
                                 style={[
                                     styles.serviceOption,
-                                    selectedTurno === service.turno &&
-                                    styles.serviceSelected,
+                                    selectedTurno === service.turno && styles.serviceSelected,
                                 ]}
                                 onPress={() => setSelectedTurno(service.turno)}
                             >
                                 <Text
                                     style={[
                                         styles.serviceText,
-                                        selectedTurno === service.turno &&
-                                        styles.serviceTextSelected,
+                                        selectedTurno === service.turno && styles.serviceTextSelected,
                                     ]}
                                 >
                                     {service.turno}
@@ -315,28 +294,21 @@ export default function LeaderSchedule() {
                         ))}
 
                         <Pressable
-                            style={[
-                                styles.generateBtn,
-                                !selectedTurno && { opacity: 0.5 },
-                            ]}
+                            style={[styles.generateBtn, !selectedTurno && { opacity: 0.5 }]}
                             disabled={!selectedTurno}
                             onPress={() => {
-                                if (!selectedDay || !selectedTurno) return;
+                                if (!selectedDay || !selectedTurno || !selectedMinistryId) return;
 
                                 router.push({
-                                    pathname:
-                                        "/(protected)/(leader)/schedule/generate",
+                                    pathname: "/(protected)/(leader)/schedule/generate",
                                     params: {
-                                        name: person?.name,
+                                        name: person?.name ?? "",
                                         ministryId: selectedMinistryId,
-                                        date: selectedDay.date.toLocaleDateString(
-                                            "pt-BR",
-                                            {
-                                                weekday: "long",
-                                                day: "2-digit",
-                                                month: "long",
-                                            }
-                                        ),
+                                        date: selectedDay.date.toLocaleDateString("pt-BR", {
+                                            weekday: "long",
+                                            day: "2-digit",
+                                            month: "long",
+                                        }),
                                         serviceLabel: selectedTurno,
                                         serviceDayId: selectedDay.serviceDayId,
                                     },
@@ -346,9 +318,7 @@ export default function LeaderSchedule() {
                                 setSelectedTurno(null);
                             }}
                         >
-                            <Text style={styles.generateText}>
-                                Gerenciar escala
-                            </Text>
+                            <Text style={styles.generateText}>Gerenciar escala</Text>
                         </Pressable>
 
                         <Pressable
@@ -381,19 +351,23 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         marginBottom: 8,
     },
+
     monthTitle: {
         fontSize: 18,
         fontWeight: "800",
         textTransform: "capitalize",
     },
+
     title: {
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: "800",
-        padding: 10,
+        paddingBottom: 8,
     },
+
     nav: { fontSize: 28, fontWeight: "800" },
 
-    dropdownWrapper: { paddingHorizontal: 16, marginBottom: 8},
+    dropdownWrapper: { paddingHorizontal: 16, marginBottom: 8 },
+
     dropdown: {
         flexDirection: "row",
         justifyContent: "center",
@@ -401,8 +375,9 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         backgroundColor: "#F3F4F6",
         borderWidth: 1,
-        borderColor: "#000",
+        borderColor: "#E5E7EB",
     },
+
     dropdownText: { fontWeight: "900" },
     chevron: { fontWeight: "900", fontSize: 15 },
 
@@ -410,7 +385,11 @@ const styles = StyleSheet.create({
         backgroundColor: "#FFF",
         borderRadius: 12,
         marginTop: 6,
+        borderWidth: 1,
+        borderColor: "#E5E7EB",
+        overflow: "hidden",
     },
+
     dropdownItem: { padding: 12, fontWeight: "700" },
 
     loading: {
@@ -425,17 +404,21 @@ const styles = StyleSheet.create({
         backgroundColor: "rgba(0,0,0,0.4)",
         justifyContent: "center",
     },
+
     modal: {
         backgroundColor: "#FFF",
         margin: 20,
         padding: 20,
         borderRadius: 20,
     },
-    modalTitle: { fontWeight: "800", marginBottom: 12 },
+
+    modalTitle: { fontWeight: "900", marginBottom: 12, fontSize: 16 },
+
     modalSubtitle: {
         fontSize: 14,
         fontWeight: "700",
         marginBottom: 8,
+        color: "#374151",
     },
 
     serviceOption: {
@@ -447,12 +430,15 @@ const styles = StyleSheet.create({
         marginBottom: 8,
         alignItems: "center",
     },
+
     serviceSelected: {
         backgroundColor: "#DBEAFE",
         borderColor: "#2563EB",
     },
+
     serviceText: { fontWeight: "700" },
-    serviceTextSelected: { color: "#2563EB" },
+
+    serviceTextSelected: { color: "#2563EB", fontWeight: "800" },
 
     generateBtn: {
         marginTop: 12,
@@ -462,6 +448,7 @@ const styles = StyleSheet.create({
         borderRadius: 14,
         alignItems: "center",
     },
+
     generateText: { color: "#FFF", fontWeight: "800" },
 
     close: {
@@ -470,5 +457,6 @@ const styles = StyleSheet.create({
         backgroundColor: "#2563EB",
         alignItems: "center",
     },
+
     closeText: { color: "#FFFFFF", fontWeight: "800" },
 });
