@@ -28,12 +28,20 @@ import {
    SCREEN
 ========================= */
 
+type Attendance = "pending" | "confirmed" | "declined";
+
+type SchedulePerson = {
+  id: string;
+  name: string;
+  role: string;
+  attendance: Attendance;
+};
+
 export default function LeaderDashboard() {
   const { user, logout } = useAuth();
 
   const [month, setMonth] = useState(new Date());
-  const [calendarData, setCalendarData] =
-    useState<CalendarDayData[]>([]);
+  const [calendarData, setCalendarData] = useState<CalendarDayData[]>([]);
 
   const [person, setPerson] = useState<Person | null>(null);
   const [ministries, setMinistries] = useState<Ministry[]>([]);
@@ -61,7 +69,7 @@ export default function LeaderDashboard() {
     return person.ministries
       .filter((m) => m.role === "leader")
       .map((m) => ministries.find((x) => x.id === m.ministryId))
-      .filter(Boolean) as Ministry[];
+      .filter((m): m is Ministry => Boolean(m));
   }, [person, ministries]);
 
   /* =========================
@@ -118,14 +126,11 @@ export default function LeaderDashboard() {
     const scheduleIndex = new Map<
       string,
       {
+        scheduleId: string;
+        ministryId: string;
         status: CalendarServiceStatus;
         ministryName: string;
-        people: {
-          id: string;
-          name: string;
-          role: string;
-          attendance: "pending" | "confirmed" | "declined";
-        }[];
+        people: SchedulePerson[];
         attendanceSummary: {
           declined: number;
           pending: number;
@@ -135,25 +140,22 @@ export default function LeaderDashboard() {
     >();
 
     schedules.forEach((s: any) => {
-      const ministry = ministries.find(
-        (m) => m.id === s.ministryId
-      );
+      const ministry = ministries.find((m) => m.id === s.ministryId);
+      const key = `${s.serviceDayId}__${s.ministryId}__${s.serviceLabel}`;
 
-      const assignments = s.assignments ?? [];
-
-      const people = assignments
+      const people: SchedulePerson[] = (s.assignments ?? [])
         .map((a: any) => {
-          const p = peopleIndex.get(a.personId);
-          if (!p) return null;
+          const person = peopleIndex.get(a.personId);
+          if (!person) return null;
 
           return {
-            id: p.id,
-            name: p.name,
+            id: person.id,
+            name: person.name,
             role: "Membro",
-            attendance: a.attendance ?? "pending",
+            attendance: (a.attendance ?? "pending") as Attendance,
           };
         })
-        .filter(Boolean);
+        .filter((p: any): p is SchedulePerson => Boolean(p));
 
       const attendanceSummary = {
         declined: 0,
@@ -161,21 +163,20 @@ export default function LeaderDashboard() {
         confirmed: 0,
       };
 
-      assignments.forEach((a: any) => {
-        if (a.attendance === "declined") attendanceSummary.declined++;
-        else if (a.attendance === "confirmed") attendanceSummary.confirmed++;
+      people.forEach((p) => {
+        if (p.attendance === "declined") attendanceSummary.declined++;
+        else if (p.attendance === "confirmed") attendanceSummary.confirmed++;
         else attendanceSummary.pending++;
       });
 
-      scheduleIndex.set(
-        `${s.serviceDayId}__${s.ministryId}__${s.serviceLabel}`,
-        {
-          status: s.status,
-          ministryName: ministry?.name ?? "Ministério",
-          people,
-          attendanceSummary,
-        }
-      );
+      scheduleIndex.set(key, {
+        scheduleId: s.id,
+        ministryId: s.ministryId,
+        status: s.status,
+        ministryName: ministry?.name ?? "Ministério",
+        people,
+        attendanceSummary,
+      });
     });
 
     const calendar: CalendarDayData[] = await Promise.all(
@@ -193,9 +194,9 @@ export default function LeaderDashboard() {
               return {
                 turno: service.label,
                 ministry: ministry.name,
-                status: found
-                  ? found.status
-                  : ("empty" as CalendarServiceStatus),
+                ministryId: ministry.id,
+                scheduleId: found?.scheduleId ?? "",
+                status: found ? found.status : "empty",
                 people: found?.people,
                 attendanceSummary: found?.attendanceSummary,
               };
@@ -207,10 +208,6 @@ export default function LeaderDashboard() {
 
     setCalendarData(calendar);
   }
-
-  /* =========================
-     EFFECT
-  ========================= */
 
   useFocusEffect(
     useCallback(() => {
@@ -231,7 +228,7 @@ export default function LeaderDashboard() {
   return (
     <AppScreen>
       <AppHeader
-        title="Painel do Líder"
+        title="Painel do líder"
         subtitle={`${user?.name} · Líder`}
         onLogout={logout}
       />
@@ -241,13 +238,7 @@ export default function LeaderDashboard() {
           <View style={styles.monthHeader}>
             <Pressable
               onPress={() =>
-                setMonth(
-                  new Date(
-                    month.getFullYear(),
-                    month.getMonth() - 1,
-                    1
-                  )
-                )
+                setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))
               }
             >
               <Text style={styles.nav}>◀</Text>
@@ -262,13 +253,7 @@ export default function LeaderDashboard() {
 
             <Pressable
               onPress={() =>
-                setMonth(
-                  new Date(
-                    month.getFullYear(),
-                    month.getMonth() + 1,
-                    1
-                  )
-                )
+                setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))
               }
             >
               <Text style={styles.nav}>▶</Text>

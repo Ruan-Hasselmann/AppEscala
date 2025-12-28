@@ -73,6 +73,8 @@ export default function RegisterScreen() {
           placeholder="Nome"
           placeholderTextColor="#6B7280"
           autoCapitalize="words"
+          autoCorrect={true}
+          spellCheck={true}
           value={name}
           onChangeText={setName}
         />

@@ -158,7 +158,7 @@ export default function AdminMinistries() {
       <ScrollView>
         <View style={styles.container}>
           <Pressable style={styles.addBtn} onPress={openCreate}>
-            <Text style={styles.addText}>Novo Ministério</Text>
+            <Text style={styles.addText}>Novo ministério</Text>
           </Pressable>
           {ministries.length === 0 ? (
             <Text style={styles.empty}>
@@ -250,8 +250,8 @@ export default function AdminMinistries() {
               <View style={styles.modal}>
                 <Text style={styles.modalTitle}>
                   {selected
-                    ? "Editar Ministério"
-                    : "Novo Ministério"}
+                    ? "Editar ministério"
+                    : "Novo ministério"}
                 </Text>
 
                 <TextInput
@@ -260,6 +260,8 @@ export default function AdminMinistries() {
                   placeholder="Nome do ministério"
                   placeholderTextColor="#6B7280"
                   autoCapitalize="words"
+                  autoCorrect={true}
+                  spellCheck={true}
                   style={styles.input}
                 />
 
@@ -268,6 +270,9 @@ export default function AdminMinistries() {
                   onChangeText={setDescription}
                   placeholder="Descrição (opcional)"
                   placeholderTextColor="#6B7280"
+                  autoCapitalize="words"
+                  autoCorrect={true}
+                  spellCheck={true}
                   style={[styles.input, styles.textarea]}
                   multiline
                 />

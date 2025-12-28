@@ -292,7 +292,7 @@ export default function LeaderGenerateSchedule() {
       });
 
       setScheduleStatus("draft");
-      setShowSavedModal(true);
+      //setShowSavedModal(true);
       await loadSchedule();
     } catch {
       handleUserError();

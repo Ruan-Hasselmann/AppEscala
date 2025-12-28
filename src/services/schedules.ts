@@ -1,6 +1,8 @@
 import {
   collection,
+  deleteDoc,
   doc,
+  getDoc,
   getDocs,
   query,
   serverTimestamp,
@@ -323,4 +325,75 @@ export async function listPublishedSchedulesByPerson(params: {
       };
     })
     .filter(Boolean) as any[];
+}
+
+/* =========================
+   REPLACE ASSIGNMENT
+========================= */
+
+export async function replaceScheduleAssignment(params: {
+  scheduleId: string;
+  oldPersonId: string;
+  newPersonId: string;
+  performedBy: string; // leader personId
+}) {
+  const { scheduleId, oldPersonId, newPersonId, performedBy } = params;
+
+  if (!scheduleId || !oldPersonId || !newPersonId || !performedBy) {
+    throw new Error("Parâmetros inválidos para substituição");
+  }
+
+  const ref = doc(db, "schedules", scheduleId);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) {
+    throw new Error("Escala não encontrada");
+  }
+
+  const data = snap.data();
+  const assignments = data.assignments ?? [];
+
+  // 🔒 Não permitir duplicar pessoa
+  if (assignments.some((a: any) => a.personId === newPersonId)) {
+    throw new Error("Pessoa já está escalada");
+  }
+
+  // 🔁 Remove antigo + adiciona novo
+  const updatedAssignments = [
+    ...assignments.filter(
+      (a: any) => a.personId !== oldPersonId
+    ),
+    {
+      personId: newPersonId,
+      ministryId: data.ministryId,
+      attendance: "pending",
+    },
+  ];
+
+  await setDoc(
+    ref,
+    {
+      assignments: updatedAssignments,
+      updatedAt: serverTimestamp(),
+      updatedBy: performedBy,
+    },
+    { merge: true }
+  );
+}
+
+export async function deleteSchedulesByServiceDay(serviceDayId: string) {
+  if (!serviceDayId) return;
+
+  const q = query(
+    collection(db, "schedules"),
+    where("serviceDayId", "==", serviceDayId)
+  );
+
+  const snap = await getDocs(q);
+
+  const deletions = snap.docs.map((d) =>
+    deleteDoc(doc(db, "schedules", d.id))
+  );
+
+  await Promise.all(deletions);
 }
