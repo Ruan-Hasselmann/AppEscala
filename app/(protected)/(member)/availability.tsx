@@ -250,12 +250,12 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 12,
-    alignSelf: "flex-start",
+    alignSelf: "center",
     marginBottom: 12,
   },
   windowOpen: { backgroundColor: "#DCFCE7" },
   windowClosed: { backgroundColor: "#FEE2E2" },
-  windowText: { fontWeight: "800", fontSize: 12 },
+  windowText: { fontWeight: "800", fontSize: 18 },
 
   empty: { fontSize: 13, color: "#6B7280" },
 

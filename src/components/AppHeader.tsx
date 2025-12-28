@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     marginTop: 2,
-    fontSize: 14,
+    fontSize: 16,
     color: "#6B7280",
   },
   logoutButton: {

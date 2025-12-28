@@ -227,7 +227,7 @@ export default function MemberSchedule() {
     return (
         <AppScreen>
             <AppHeader
-                title="Minhas escalas"
+                title="Registrar presença"
                 subtitle={`${user?.name} · Membro`}
                 onLogout={logout}
             />
