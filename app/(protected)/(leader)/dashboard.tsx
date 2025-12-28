@@ -228,7 +228,7 @@ export default function LeaderDashboard() {
   return (
     <AppScreen>
       <AppHeader
-        title="Painel do Líder"
+        title="Painel do líder"
         subtitle={`${user?.name} · Líder`}
         onLogout={logout}
       />

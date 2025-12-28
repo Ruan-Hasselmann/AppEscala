@@ -223,7 +223,7 @@ export default function AdminDashboard() {
   return (
     <AppScreen>
       <AppHeader
-        title="Painel Administrativo"
+        title="Painel administrativo"
         subtitle={`${user?.name} · Administrador`}
         onLogout={logout}
       />
