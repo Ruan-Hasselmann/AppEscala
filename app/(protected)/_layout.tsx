@@ -25,7 +25,7 @@ export default function ProtectedLayout() {
       return;
     }
 
-    router.replace("/(protected)/(member)/dashboard");
+    router.replace("/(protected)/(member)/schedule");
   }, [loading, user?.role]);
 
   // 🔒 Enquanto decide rota, não renderiza nada

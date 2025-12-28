@@ -9,6 +9,7 @@ import {
   where
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { listMinistries } from "./ministries";
 
 /* =========================
    TYPES
@@ -233,7 +234,7 @@ export async function publishSchedule(params: {
   const ref = doc(db, COLLECTION, snap.docs[0].id);
   const schedule = snap.docs[0].data() as Schedule;
 
-  // 🔥 ao publicar, todos começam como PENDING
+  // ✅ ao publicar, todos começam como PENDING
   const assignmentsWithAttendance = (schedule.assignments ?? []).map((a) => ({
     ...a,
     attendance: "pending" as AttendanceStatus,
@@ -243,6 +244,7 @@ export async function publishSchedule(params: {
     ref,
     {
       status: "published",
+      assignments: assignmentsWithAttendance, // ✅ FALTAVA ISSO
       updatedAt: serverTimestamp(),
     },
     { merge: true }
@@ -297,16 +299,26 @@ export async function updateAttendance(params: {
 export async function listPublishedSchedulesByPerson(params: {
   personId: string;
 }): Promise<
-  (Schedule & { attendance: "pending" | "confirmed" | "declined" })[]
+  (Schedule & {
+    attendance: "pending" | "confirmed" | "declined";
+    ministryName: string;
+  })[]
 > {
   const { personId } = params;
 
-  const q = query(
-    collection(db, COLLECTION),
-    where("status", "==", "published")
-  );
+  const [snap, ministries] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, COLLECTION),
+        where("status", "==", "published")
+      )
+    ),
+    listMinistries(),
+  ]);
 
-  const snap = await getDocs(q);
+  const ministryIndex = new Map(
+    ministries.map((m) => [m.id, m.name])
+  );
 
   return snap.docs
     .map((d) => {
@@ -321,6 +333,8 @@ export async function listPublishedSchedulesByPerson(params: {
         ...data,
         id: d.id,
         attendance: assignment.attendance ?? "pending",
+        ministryName:
+          ministryIndex.get(data.ministryId) ?? "Ministério",
       };
     })
     .filter(Boolean) as any[];

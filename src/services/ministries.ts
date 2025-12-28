@@ -82,10 +82,16 @@ export async function listMinistries(): Promise<Ministry[]> {
   const ref = collection(db, COLLECTION);
   const snap = await getDocs(ref);
 
-  return snap.docs.map((d) => ({
+  const ministries = snap.docs.map((d) => ({
     id: d.id,
     ...(d.data() as Omit<Ministry, "id">),
   }));
+
+  ministries.sort((a, b) =>
+    a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" })
+  );
+
+  return ministries;
 }
 
 export async function listActiveMinistries(): Promise<Ministry[]> {

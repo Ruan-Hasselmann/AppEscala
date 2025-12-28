@@ -3,6 +3,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   query,
   Timestamp,
@@ -79,4 +80,22 @@ export async function getServiceDaysByMonth(
 
 export async function deleteServiceDay(id: string) {
   await deleteDoc(doc(db, "serviceDays", id));
+}
+
+export async function getServiceDayById(
+  serviceDayId: string
+): Promise<ServiceDay | null> {
+  if (!serviceDayId) return null;
+
+  const ref = doc(db, "serviceDays", serviceDayId);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) return null;
+
+  const data = snap.data();
+
+  return {
+    id: snap.id,
+    date: data.date.toDate(), // 🔥 converte Timestamp → Date
+  };
 }
