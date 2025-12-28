@@ -14,16 +14,17 @@ export default function MemberLayout() {
         },
       }}
     >
-      {/* Confirmação */}
+      {/* DASHBOARD */}
       <Tabs.Screen
-        name="schedule"
+        name="dashboard"
         options={{
-          title: "Presença",
+          title: "Dashboard",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="checkbox-outline" size={size} color={color} />
+            <Ionicons name="apps-outline" size={size} color={color} />
           ),
         }}
       />
+
       {/* Disponibilidade */}
       <Tabs.Screen
         name="availability"
@@ -34,13 +35,13 @@ export default function MemberLayout() {
           ),
         }}
       />
-      {/* DASHBOARD */}
+      {/* Confirmação */}
       <Tabs.Screen
-        name="dashboard"
+        name="schedule"
         options={{
-          title: "Escala",
+          title: "Presença",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="apps-outline" size={size} color={color} />
+            <Ionicons name="checkbox-outline" size={size} color={color} />
           ),
         }}
       />

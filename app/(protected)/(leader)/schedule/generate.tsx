@@ -12,7 +12,7 @@ import {
   saveScheduleDraft,
   Schedule,
 } from "@/src/services/schedules";
-import { getServiceDayById } from "@/src/services/serviceDays";
+
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -106,9 +106,6 @@ export default function LeaderGenerateSchedule() {
   const safeServiceDayId = serviceDayId ?? "";
   const safeMinistryId = ministryId ?? "";
   const safeServiceLabel = (serviceLabel ?? "").trim();
-  const isCustomService = !["manhã", "noite", "tarde"].includes(
-    safeServiceLabel.toLowerCase()
-  );
 
   const isPublished = scheduleStatus === "published";
 
@@ -143,16 +140,7 @@ export default function LeaderGenerateSchedule() {
     setPeople(p.filter((x) => x.active));
     setMinistries(m.filter((x) => x.active));
 
-    if (isCustomService) {
-      // 🔥 culto custom: todos disponíveis
-      setAvailablePersonIds(
-        new Set(p.map((person) => person.id))
-      );
-    } else {
-      setAvailablePersonIds(
-        new Set(availability.map((a) => a.personId))
-      );
-    }
+    setAvailablePersonIds(new Set(availability.map((a) => a.personId)));
 
     if (existingThisTurn) {
       setAssigned(existingThisTurn.assignments ?? []);
@@ -292,25 +280,19 @@ export default function LeaderGenerateSchedule() {
     )
       return;
 
-    const serviceDay = await getServiceDayById(safeServiceDayId);
-
-    if (!serviceDay) {
-      throw new Error("Dia de culto não encontrado");
-    }
-
     try {
       await saveScheduleDraft({
         ministryId: safeMinistryId,
         serviceDayId: safeServiceDayId,
         serviceLabel: safeServiceLabel,
         serviceDate: date,
-        serviceDayDate: serviceDay.date, // ✅ FIX DEFINITIVO
+        serviceDayDate: parseServiceDayDate(date), // ✅ FIX DEFINITIVO
         assignments: assignedForThisTurn,
         createdBy: user.personId,
       });
 
       setScheduleStatus("draft");
-      //setShowSavedModal(true);
+      setShowSavedModal(true);
       await loadSchedule();
     } catch {
       handleUserError();

@@ -4,7 +4,7 @@ import { Redirect, Stack } from "expo-router";
 const ROLE_ROOT = {
   admin: "/(protected)/(admin)/dashboard",
   leader: "/(protected)/(leader)/dashboard",
-  member: "/(protected)/(member)/schedule",
+  member: "/(protected)/(member)/dashboard",
 } as const;
 
 export default function PublicLayout() {

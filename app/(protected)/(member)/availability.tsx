@@ -85,7 +85,7 @@ export default function MemberAvailability() {
 
         setWindowLabel(
           editable
-            ? `Preencher até dia ${close}`
+            ? `Aberta até dia ${close}`
             : `Encerrada em ${close}`
         );
 
@@ -250,12 +250,12 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 12,
-    alignSelf: "center",
+    alignSelf: "flex-start",
     marginBottom: 12,
   },
   windowOpen: { backgroundColor: "#DCFCE7" },
   windowClosed: { backgroundColor: "#FEE2E2" },
-  windowText: { fontWeight: "800", fontSize: 26 },
+  windowText: { fontWeight: "800", fontSize: 12 },
 
   empty: { fontSize: 13, color: "#6B7280" },
 
