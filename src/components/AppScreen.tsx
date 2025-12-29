@@ -8,10 +8,7 @@ type Props = {
 
 export function AppScreen({ children }: Props) {
   return (
-    <SafeAreaView
-      style={styles.safe}
-      edges={["bottom"]} // 👈 CRÍTICO
-    >
+    <SafeAreaView style={styles.safe} edges={["bottom"]}>
       <View style={styles.container}>{children}</View>
     </SafeAreaView>
   );
@@ -20,10 +17,10 @@ export function AppScreen({ children }: Props) {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
+    backgroundColor: "#FFF",
   },
   container: {
     flex: 1,
-    marginBottom: -50,
-    backgroundColor: "#FFF"
+    backgroundColor: "#FFF",
   },
 });

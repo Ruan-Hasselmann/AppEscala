@@ -38,6 +38,17 @@ export type Person = {
   updatedAt: Date;
 };
 
+/* =========================
+   HELPERS
+========================= */
+
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
 
 /* =========================
    MAPPERS
@@ -169,7 +180,6 @@ export async function listLeaderMinistryIds(
   const person = await getPersonById(personId);
 
   if (!person) {
-    console.warn("[listLeaderMinistryIds] pessoa não encontrada:", personId);
     return [];
   }
 
@@ -177,10 +187,32 @@ export async function listLeaderMinistryIds(
     .filter((m) => m.role === "leader")
     .map((m) => m.ministryId);
 
-  console.log(
-    "[listLeaderMinistryIds] líder dos ministérios:",
-    ministryIds
-  );
-
   return ministryIds;
+}
+
+export async function listPeopleByIds(
+  personIds: string[]
+): Promise<Person[]> {
+  if (personIds.length === 0) return [];
+
+  const chunks = chunkArray(personIds, 10); // 🔥 limite do Firestore
+  const results: Person[] = [];
+
+  for (const ids of chunks) {
+    const q = query(
+      collection(db, "people"),
+      where("__name__", "in", ids)
+    );
+
+    const snap = await getDocs(q);
+
+    snap.docs.forEach((d) => {
+      results.push({
+        id: d.id,
+        ...(d.data() as Omit<Person, "id">),
+      });
+    });
+  }
+
+  return results;
 }

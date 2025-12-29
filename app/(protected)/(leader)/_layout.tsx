@@ -26,7 +26,7 @@ export default function LeaderLayout() {
       />
       {/* Escala */}
       <Tabs.Screen
-        name="schedule/auto-generate"
+        name="schedule/leaderScheduleAutoFlow"
         options={{
           title: "Escala automática",
           tabBarIcon: ({ color, size }) => (
