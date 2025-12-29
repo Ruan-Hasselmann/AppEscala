@@ -2,18 +2,20 @@ import { AppHeader } from "@/src/components/AppHeader";
 import { AppScreen } from "@/src/components/AppScreen";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
-    listPublishedSchedulesByPerson,
-    updateAttendance,
+  listPublishedSchedulesByPerson,
+  updateAttendance,
 } from "@/src/services/schedules";
 
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 /* =========================
@@ -21,26 +23,26 @@ import {
 ========================= */
 
 const TURN_ORDER: Record<string, number> = {
-    manhã: 1,
-    manha: 1,
-    tarde: 2,
-    noite: 3,
+  manhã: 1,
+  manha: 1,
+  tarde: 2,
+  noite: 3,
 };
 
 const MONTHS: Record<string, number> = {
-    janeiro: 0,
-    fevereiro: 1,
-    março: 2,
-    marco: 2,
-    abril: 3,
-    maio: 4,
-    junho: 5,
-    julho: 6,
-    agosto: 7,
-    setembro: 8,
-    outubro: 9,
-    novembro: 10,
-    dezembro: 11,
+  janeiro: 0,
+  fevereiro: 1,
+  março: 2,
+  marco: 2,
+  abril: 3,
+  maio: 4,
+  junho: 5,
+  julho: 6,
+  agosto: 7,
+  setembro: 8,
+  outubro: 9,
+  novembro: 10,
+  dezembro: 11,
 };
 
 /* =========================
@@ -48,38 +50,31 @@ const MONTHS: Record<string, number> = {
 ========================= */
 
 function getServiceDayTime(s: any): number {
-    if (!s.serviceDate || typeof s.serviceDate !== "string") {
-        return 0;
-    }
+  if (!s.serviceDate || typeof s.serviceDate !== "string") return 0;
 
-    // ex: "sábado, 10 de janeiro"
-    const match = s.serviceDate
-        .toLowerCase()
-        .match(/(\d{1,2})\s+de\s+([a-zç]+)/i);
+  const match = s.serviceDate
+    .toLowerCase()
+    .match(/(\d{1,2})\s+de\s+([a-zç]+)/i);
 
-    if (!match) return 0;
+  if (!match) return 0;
 
-    const day = Number(match[1]);
-    const monthName = match[2];
-    const month = MONTHS[monthName];
+  const day = Number(match[1]);
+  const month = MONTHS[match[2]];
 
-    if (!Number.isFinite(day) || month === undefined) {
-        return 0;
-    }
+  if (!Number.isFinite(day) || month === undefined) return 0;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-    let date = new Date(today.getFullYear(), month, day);
+  let date = new Date(today.getFullYear(), month, day);
+  date.setHours(0, 0, 0, 0);
+
+  if (date.getTime() < today.getTime()) {
+    date = new Date(today.getFullYear() + 1, month, day);
     date.setHours(0, 0, 0, 0);
+  }
 
-    // se já passou neste ano → próximo ano
-    if (date.getTime() < today.getTime()) {
-        date = new Date(today.getFullYear() + 1, month, day);
-        date.setHours(0, 0, 0, 0);
-    }
-
-    return date.getTime();
+  return date.getTime();
 }
 
 /* =========================
@@ -87,243 +82,307 @@ function getServiceDayTime(s: any): number {
 ========================= */
 
 export default function MemberSchedule() {
-    const { user, logout } = useAuth();
+  const { user, logout } = useAuth();
 
-    const [schedules, setSchedules] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+  const [schedules, setSchedules] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-    /* =========================
-       LOAD
-    ========================= */
+  const [declineTarget, setDeclineTarget] = useState<any | null>(null);
+  const [declineReason, setDeclineReason] = useState("");
 
-    useFocusEffect(
-        useCallback(() => {
-            let active = true;
+  /* =========================
+     LOAD
+  ========================= */
 
-            async function load() {
-                if (!user) return;
+  async function reload() {
+    if (!user) return;
 
-                setLoading(true);
+    setLoading(true);
 
-                const data = await listPublishedSchedulesByPerson({
-                    personId: user.personId,
-                });
+    const data = await listPublishedSchedulesByPerson({
+      personId: user.personId,
+    });
 
-                if (active) {
-                    setSchedules(data);
-                    setLoading(false);
-                }
-            }
+    setSchedules(data);
+    setLoading(false);
+  }
 
-            load();
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
 
-            return () => {
-                active = false;
-            };
-        }, [user])
+      async function load() {
+        if (!user) return;
+
+        setLoading(true);
+
+        const data = await listPublishedSchedulesByPerson({
+          personId: user.personId,
+        });
+
+        if (active) {
+          setSchedules(data);
+          setLoading(false);
+        }
+      }
+
+      load();
+      reload();
+      return () => {
+        active = false;
+      };
+    }, [user])
+  );
+
+  /* =========================
+     BASE DATE
+  ========================= */
+
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }, []);
+
+  /* =========================
+     NEXT SERVICE
+  ========================= */
+
+  const nextServiceDayTime = useMemo(() => {
+    const future = schedules
+      .map((s) => getServiceDayTime(s))
+      .filter((t) => t >= today)
+      .sort((a, b) => a - b);
+
+    return future.length ? future[0] : null;
+  }, [schedules, today]);
+
+  function isNextService(s: any) {
+    if (!nextServiceDayTime) return false;
+    return getServiceDayTime(s) === nextServiceDayTime;
+  }
+
+  /* =========================
+     SORT
+  ========================= */
+
+  const sortedSchedules = useMemo(() => {
+    return [...schedules].sort((a, b) => {
+      const aNext = isNextService(a);
+      const bNext = isNextService(b);
+
+      if (aNext && !bNext) return -1;
+      if (!aNext && bNext) return 1;
+
+      const timeA = getServiceDayTime(a);
+      const timeB = getServiceDayTime(b);
+      if (timeA !== timeB) return timeA - timeB;
+
+      const orderA = TURN_ORDER[a.serviceLabel?.toLowerCase()] ?? 99;
+      const orderB = TURN_ORDER[b.serviceLabel?.toLowerCase()] ?? 99;
+      return orderA - orderB;
+    });
+  }, [schedules, nextServiceDayTime]);
+
+  /* =========================
+     ACTIONS (🔥 AJUSTE AQUI 🔥)
+  ========================= */
+
+  async function confirm(scheduleId: string) {
+    if (!user) return;
+
+    await updateAttendance({
+      scheduleId,
+      personId: user.personId,
+      attendance: "confirmed",
+    });
+
+    setSchedules((prev) =>
+      prev.map((s) =>
+        s.id === scheduleId
+          ? {
+            ...s,
+            assignments: s.assignments.map((a: any) =>
+              a.personId === user.personId
+                ? { ...a, attendance: "confirmed" }
+                : a
+            ),
+          }
+          : s
+      )
     );
+    await reload();
+  }
 
-    /* =========================
-       BASE DATE (HOJE)
-    ========================= */
+  async function decline(scheduleId: string, reason: string) {
+    if (!user) return;
 
-    const today = useMemo(() => {
-        const d = new Date();
-        d.setHours(0, 0, 0, 0);
-        return d.getTime();
-    }, []);
+    await updateAttendance({
+      scheduleId,
+      personId: user.personId,
+      attendance: "declined",
+      reason,
+    });
 
-    /* =========================
-       PRÓXIMO DIA DE CULTO
-    ========================= */
+    setSchedules((prev) =>
+      prev.map((s) =>
+        s.id === scheduleId
+          ? {
+            ...s,
+            assignments: s.assignments.map((a: any) =>
+              a.personId === user.personId
+                ? { ...a, attendance: "declined" }
+                : a
+            ),
+          }
+          : s
+      )
+    );
+    await reload();
+  }
 
-    const nextServiceDayTime = useMemo(() => {
-        const future = schedules
-            .map((s) => getServiceDayTime(s))
-            .filter((time) => time >= today)
-            .sort((a, b) => a - b);
-
-        return future.length > 0 ? future[0] : null;
-    }, [schedules, today]);
-
-    /* =========================
-       ESTE É O AJUSTE CRÍTICO
-    ========================= */
-
-    function isNextService(s: any) {
-        if (!nextServiceDayTime) return false;
-        return getServiceDayTime(s) === nextServiceDayTime;
-    }
-
-    /* =========================
-       ORDENAÇÃO FINAL
-    ========================= */
-
-    const sortedSchedules = useMemo(() => {
-        return [...schedules].sort((a, b) => {
-            const aIsNext = isNextService(a);
-            const bIsNext = isNextService(b);
-
-            // 1️⃣ todos do próximo dia sobem
-            if (aIsNext && !bIsNext) return -1;
-            if (!aIsNext && bIsNext) return 1;
-
-            // 2️⃣ ordena por data
-            const timeA = getServiceDayTime(a);
-            const timeB = getServiceDayTime(b);
-            if (timeA !== timeB) return timeA - timeB;
-
-            // 3️⃣ ordena por turno
-            const orderA = TURN_ORDER[a.serviceLabel?.toLowerCase()] ?? 99;
-            const orderB = TURN_ORDER[b.serviceLabel?.toLowerCase()] ?? 99;
-            return orderA - orderB;
-        });
-    }, [schedules, nextServiceDayTime]);
-
-    /* =========================
-       ACTIONS
-    ========================= */
-
-    async function confirm(scheduleId: string) {
-        if (!user) return;
-
-        await updateAttendance({
-            scheduleId,
-            personId: user.personId,
-            attendance: "confirmed",
-        });
-
-        setSchedules((prev) =>
-            prev.map((s) =>
-                s.id === scheduleId
-                    ? { ...s, attendance: "confirmed" }
-                    : s
-            )
-        );
-    }
-
-    async function decline(scheduleId: string) {
-        if (!user) return;
-
-        await updateAttendance({
-            scheduleId,
-            personId: user.personId,
-            attendance: "declined",
-        });
-
-        setSchedules((prev) =>
-            prev.map((s) =>
-                s.id === scheduleId
-                    ? { ...s, attendance: "declined" }
-                    : s
-            )
-        );
-    }
-
-    /* =========================
-       RENDER
-    ========================= */
-
+  function getMyAttendance(s: any) {
     return (
-        <AppScreen>
-            <AppHeader
-                title="Registrar presença"
-                subtitle={`${user?.name} · Membro`}
-                onLogout={logout}
+      s.assignments?.find(
+        (a: any) => a.personId === user?.personId
+      )?.attendance ?? "pending"
+    );
+  }
+
+  /* =========================
+     RENDER
+  ========================= */
+
+  return (
+    <AppScreen>
+      <AppHeader
+        title="Registrar presença"
+        subtitle={`${user?.name} · Membro`}
+        onLogout={logout}
+      />
+
+      <ScrollView>
+        <View style={styles.container}>
+          {loading && <Text style={styles.empty}>Carregando...</Text>}
+
+          {!loading && sortedSchedules.length === 0 && (
+            <Text style={styles.empty}>Nenhuma escala publicada</Text>
+          )}
+
+          {sortedSchedules.map((s) => {
+            const next = isNextService(s);
+
+            return (
+              <View
+                key={s.id}
+                style={[
+                  styles.card,
+                  next && styles.cardNext,
+                  !next && styles.cardDisabled,
+                ]}
+              >
+                <View style={styles.cardHeader}>
+                  <Text style={[styles.title, next && styles.titleNext]}>
+                    {s.serviceLabel}
+                  </Text>
+
+                  {next && (
+                    <View style={styles.nextBadge}>
+                      <Text style={styles.nextBadgeText}>
+                        PRÓXIMO CULTO
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                <Text style={styles.date}>{s.serviceDate}</Text>
+
+                {getMyAttendance(s) === "pending" && next && (
+                  <View style={styles.actions}>
+                    <Pressable
+                      style={styles.confirm}
+                      onPress={() => confirm(s.id)}
+                    >
+                      <Text style={styles.confirmText}>
+                        Confirmar presença
+                      </Text>
+                    </Pressable>
+
+                    <Pressable onPress={() => setDeclineTarget(s)}>
+                      <Text style={styles.declineText}>
+                        Não poderei servir
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                {getMyAttendance(s) === "pending" && !next && (
+                  <Text style={styles.locked}>
+                    Disponível para confirmação apenas no próximo culto
+                  </Text>
+                )}
+
+                {getMyAttendance(s) === "confirmed" && (
+                  <Text style={styles.confirmed}>
+                    ✅ Presença confirmada
+                  </Text>
+                )}
+
+                {getMyAttendance(s) === "declined" && (
+                  <Text style={styles.declined}>
+                    ❌ Não poderá comparecer
+                  </Text>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+
+      {/* MODAL MOTIVO */}
+      <Modal visible={!!declineTarget} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>Informar motivo</Text>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Ex: viagem, trabalho, imprevisto..."
+              value={declineReason}
+              onChangeText={setDeclineReason}
+              multiline
             />
 
-            <ScrollView>
-                <View style={styles.container}>
-                    {loading && (
-                        <Text style={styles.empty}>Carregando...</Text>
-                    )}
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => {
+                  setDeclineTarget(null);
+                  setDeclineReason("");
+                }}
+              >
+                <Text style={styles.cancelText}>Cancelar</Text>
+              </Pressable>
 
-                    {!loading && sortedSchedules.length === 0 && (
-                        <Text style={styles.empty}>
-                            Nenhuma escala publicada
-                        </Text>
-                    )}
-
-                    {sortedSchedules.map((s) => {
-                        const next = isNextService(s);
-
-                        return (
-                            <View
-                                key={s.id}
-                                style={[
-                                    styles.card,
-                                    next && styles.cardNext,
-                                    !next && styles.cardDisabled,
-                                ]}
-                            >
-                                <View style={styles.cardHeader}>
-                                    <Text
-                                        style={[
-                                            styles.title,
-                                            next && styles.titleNext,
-                                        ]}
-                                    >
-                                        {s.serviceLabel}
-                                    </Text>
-
-                                    {next && (
-                                        <View style={styles.nextBadge}>
-                                            <Text style={styles.nextBadgeText}>
-                                                PRÓXIMO CULTO
-                                            </Text>
-                                        </View>
-                                    )}
-                                </View>
-
-                                <Text style={styles.date}>
-                                    {s.serviceDate}
-                                </Text>
-
-                                {s.attendance === "pending" && next && (
-                                    <View style={styles.actions}>
-                                        <Pressable
-                                            style={styles.confirm}
-                                            onPress={() => confirm(s.id)}
-                                        >
-                                            <Text style={styles.confirmText}>
-                                                Confirmar presença
-                                            </Text>
-                                        </Pressable>
-
-                                        <Pressable
-                                            onPress={() => decline(s.id)}
-                                        >
-                                            <Text style={styles.declineText}>
-                                                Não poderei servir
-                                            </Text>
-                                        </Pressable>
-                                    </View>
-                                )}
-
-                                {s.attendance === "pending" && !next && (
-                                    <Text style={styles.locked}>
-                                        Disponível para confirmação apenas no próximo culto
-                                    </Text>
-                                )}
-
-                                {s.attendance === "confirmed" && (
-                                    <Text style={styles.confirmed}>
-                                        ✅ Presença confirmada
-                                    </Text>
-                                )}
-
-                                {s.attendance === "declined" && (
-                                    <Text style={styles.declined}>
-                                        ❌ Não poderá comparecer
-                                    </Text>
-                                )}
-                            </View>
-                        );
-                    })}
-                </View>
-            </ScrollView>
-        </AppScreen>
-    );
+              <Pressable
+                style={[
+                  styles.confirmBtn,
+                  !declineReason && styles.confirmDisabled,
+                ]}
+                disabled={!declineReason}
+                onPress={async () => {
+                  await decline(declineTarget.id, declineReason);
+                  setDeclineTarget(null);
+                  setDeclineReason("");
+                }}
+              >
+                <Text style={styles.confirmText}>Confirmar recusa</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </AppScreen>
+  );
 }
 
 /* =========================
@@ -331,87 +390,127 @@ export default function MemberSchedule() {
 ========================= */
 
 const styles = StyleSheet.create({
-    container: { padding: 16 },
+  container: { padding: 16 },
+  empty: { fontSize: 13, color: "#6B7280" },
 
-    empty: { fontSize: 13, color: "#6B7280" },
+  card: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+  },
 
-    card: {
-        backgroundColor: "#F9FAFB",
-        borderRadius: 14,
-        padding: 14,
-        marginBottom: 10,
-    },
+  cardNext: {
+    borderWidth: 2,
+    borderColor: "#22C55E",
+    backgroundColor: "#F0FDF4",
+  },
 
-    cardNext: {
-        borderWidth: 2,
-        borderColor: "#22C55E",
-        backgroundColor: "#F0FDF4",
-    },
+  cardDisabled: { opacity: 0.55 },
 
-    cardDisabled: {
-        opacity: 0.55,
-    },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
 
-    cardHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-    },
+  title: { fontWeight: "800" },
+  titleNext: { fontSize: 18, fontWeight: "900" },
 
-    title: { fontWeight: "800" },
+  date: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginBottom: 8,
+  },
 
-    titleNext: {
-        fontSize: 18,
-        fontWeight: "900",
-    },
+  nextBadge: {
+    backgroundColor: "#22C55E",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
 
-    date: {
-        fontSize: 13,
-        color: "#6B7280",
-        marginBottom: 8,
-    },
+  nextBadgeText: {
+    color: "#FFF",
+    fontWeight: "900",
+    fontSize: 11,
+  },
 
-    nextBadge: {
-        backgroundColor: "#22C55E",
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 999,
-    },
+  actions: { gap: 8 },
 
-    nextBadgeText: {
-        color: "#FFF",
-        fontWeight: "900",
-        fontSize: 11,
-    },
+  confirm: {
+    backgroundColor: "#16A34A",
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+  },
 
-    actions: { gap: 8 },
+  confirmText: {
+    color: "#FFF",
+    fontWeight: "900",
+    fontSize: 16,
+  },
 
-    confirm: {
-        backgroundColor: "#16A34A",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
-    },
+  declineText: {
+    color: "#DC2626",
+    fontWeight: "800",
+    textAlign: "center",
+    paddingVertical: 8,
+  },
 
-    confirmText: {
-        color: "#FFF",
-        fontWeight: "900",
-        fontSize: 16,
-    },
+  locked: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    fontStyle: "italic",
+  },
 
-    declineText: {
-        color: "#DC2626",
-        fontWeight: "800",
-        textAlign: "center",
-        paddingVertical: 8,
-    },
+  confirmed: { color: "#16A34A", fontWeight: "800" },
+  declined: { color: "#DC2626", fontWeight: "800" },
 
-    locked: {
-        fontSize: 12,
-        color: "#9CA3AF",
-        fontStyle: "italic",
-    },
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
 
-    confirmed: { color: "#16A34A", fontWeight: "800" },
-    declined: { color: "#DC2626", fontWeight: "800" },
+  modal: {
+    width: "100%",
+    backgroundColor: "#FFF",
+    borderRadius: 20,
+    padding: 20,
+  },
+
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 12,
+  },
+
+  input: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    padding: 10,
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
+
+  modalActions: {
+    marginTop: 16,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+
+  cancelText: { fontWeight: "800", color: "#DC2626" },
+
+  confirmBtn: {
+    backgroundColor: "#2563EB",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+
+  confirmDisabled: { opacity: 0.5 },
 });

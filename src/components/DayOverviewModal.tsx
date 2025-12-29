@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   Modal,
@@ -145,20 +146,7 @@ export function DayOverviewModal({
                                 <Pressable
                                   onPress={() => {
                                     onClose(); // fecha modal principal
-
-                                    setTimeout(() => {
-                                      setReplaceContext({
-                                        scheduleId: s.scheduleId,
-                                        ministryName: s.ministry,
-                                        serviceLabel: s.turno,
-                                        serviceDate:
-                                          safeDay.date.toLocaleDateString(
-                                            "pt-BR"
-                                          ),
-                                        declinedPersonName:
-                                          p.name,
-                                      });
-                                    }, 50);
+                                    router.replace("/(protected)/(leader)/schedule/declines");
                                   }}
                                 >
                                   <Text style={styles.replaceBtn}>

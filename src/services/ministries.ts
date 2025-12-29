@@ -2,11 +2,14 @@
 import {
   collection,
   doc,
+  documentId,
   getDoc,
   getDocs,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from "firebase/firestore";
 
 import { db } from "@/src/services/firebase";
@@ -114,4 +117,36 @@ export async function updateMinistry(
     ...input,
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function listMinistriesByIds(
+  ministryIds: string[]
+): Promise<Ministry[]> {
+  if (ministryIds.length === 0) return [];
+
+  // 🔥 Firestore limita "in" a 10 itens
+  const chunks: string[][] = [];
+  for (let i = 0; i < ministryIds.length; i += 10) {
+    chunks.push(ministryIds.slice(i, i + 10));
+  }
+
+  const results: Ministry[] = [];
+
+  for (const ids of chunks) {
+    const q = query(
+      collection(db, "ministries"),
+      where(documentId(), "in", ids)
+    );
+
+    const snap = await getDocs(q);
+
+    snap.forEach((doc) => {
+      results.push({
+        id: doc.id,
+        ...(doc.data() as Omit<Ministry, "id">),
+      });
+    });
+  }
+
+  return results;
 }

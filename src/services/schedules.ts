@@ -7,7 +7,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  where
+  where,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -21,7 +21,8 @@ export type AttendanceStatus = "pending" | "confirmed" | "declined";
 export type ScheduleAssignment = {
   personId: string;
   ministryId: string;
-  attendance?: AttendanceStatus; // 🔥 confirmação do membro
+  attendance?: AttendanceStatus;
+  reason?: string; // ✅ motivo de recusa
 };
 
 export type Schedule = {
@@ -38,11 +39,16 @@ export type Schedule = {
   serviceDate: string;
 
   status: ScheduleStatus;
+
   assignments: ScheduleAssignment[];
+
+  // ✅ índice auxiliar para queries por pessoa
+  assignmentPersonIds: string[];
 
   createdBy: string;
   createdAt?: any;
   updatedAt?: any;
+  updatedBy?: string;
 };
 
 /* =========================
@@ -73,17 +79,24 @@ export async function saveScheduleDraft(params: {
     createdBy,
   } = params;
 
-  if (!ministryId || !serviceDayId || !serviceLabel || !serviceDate || !createdBy) {
+  if (
+    !ministryId ||
+    !serviceDayId ||
+    !serviceLabel ||
+    !serviceDate ||
+    !createdBy
+  ) {
     throw new Error("Parâmetros inválidos para salvar escala");
   }
 
-  // ❗ regra mínima: não permitir pessoa duplicada no MESMO turno
+  // ❗ não permitir pessoa duplicada no mesmo turno
   const unique = new Set(assignments.map((a) => a.personId));
   if (unique.size !== assignments.length) {
     throw new Error("Pessoa duplicada na escala");
   }
 
-  // 🔎 identifica por DIA + MINISTÉRIO + TURNO
+  const assignmentPersonIds = assignments.map((a) => a.personId);
+
   const q = query(
     collection(db, COLLECTION),
     where("ministryId", "==", ministryId),
@@ -101,10 +114,11 @@ export async function saveScheduleDraft(params: {
       ref,
       {
         serviceDate,
+        serviceDayDate: params.serviceDayDate,
         assignments,
+        assignmentPersonIds,
         status: "draft",
         updatedAt: serverTimestamp(),
-        serviceDayDate: params.serviceDayDate,
       },
       { merge: true }
     );
@@ -123,6 +137,7 @@ export async function saveScheduleDraft(params: {
     serviceDayDate: params.serviceDayDate,
     status: "draft",
     assignments,
+    assignmentPersonIds,
     createdBy,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -133,7 +148,6 @@ export async function saveScheduleDraft(params: {
 
 /* =========================
    LIST BY MONTH
-   (por ministério + dias)
 ========================= */
 
 export async function listSchedulesByMonth(params: {
@@ -158,18 +172,16 @@ export async function listSchedulesByMonth(params: {
 
 /* =========================
    LIST BY SERVICE DAY
-   (conflitos no mesmo dia)
 ========================= */
 
 export async function listSchedulesByServiceDay(params: {
   serviceDayId: string;
 }): Promise<Schedule[]> {
-  const { serviceDayId } = params;
-  if (!serviceDayId) return [];
+  if (!params.serviceDayId) return [];
 
   const q = query(
     collection(db, COLLECTION),
-    where("serviceDayId", "==", serviceDayId)
+    where("serviceDayId", "==", params.serviceDayId)
   );
 
   const snap = await getDocs(q);
@@ -182,7 +194,6 @@ export async function listSchedulesByServiceDay(params: {
 
 /* =========================
    GET BY SERVICE
-   (dia + ministério + turno)
 ========================= */
 
 export async function getScheduleByService(params: {
@@ -210,7 +221,7 @@ export async function getScheduleByService(params: {
 }
 
 /* =========================
-   PUBLISH
+   PUBLISH (INDIVIDUAL)
 ========================= */
 
 export async function publishSchedule(params: {
@@ -234,16 +245,21 @@ export async function publishSchedule(params: {
   const ref = doc(db, COLLECTION, snap.docs[0].id);
   const schedule = snap.docs[0].data() as Schedule;
 
-  // 🔥 ao publicar, todos começam como PENDING
-  const assignmentsWithAttendance = (schedule.assignments ?? []).map((a) => ({
-    ...a,
-    attendance: "pending" as AttendanceStatus,
-  }));
+  const assignmentsWithAttendance = (schedule.assignments ?? []).map(
+    (a) => ({
+      ...a,
+      attendance: "pending" as AttendanceStatus,
+    })
+  );
 
   await setDoc(
     ref,
     {
       status: "published",
+      assignments: assignmentsWithAttendance,
+      assignmentPersonIds: assignmentsWithAttendance.map(
+        (a) => a.personId
+      ),
       updatedAt: serverTimestamp(),
     },
     { merge: true }
@@ -251,29 +267,104 @@ export async function publishSchedule(params: {
 }
 
 /* =========================
-   CONFIRM / DECLINE PRESENCE
+   PUBLISH BY MONTH
+========================= */
+
+export async function publishSchedulesByMonth(params: {
+  ministryId: string;
+  serviceDayIds: string[];
+}) {
+  if (params.serviceDayIds.length === 0) return;
+
+  const q = query(
+    collection(db, COLLECTION),
+    where("ministryId", "==", params.ministryId),
+    where("serviceDayId", "in", params.serviceDayIds),
+    where("status", "==", "draft")
+  );
+
+  const snap = await getDocs(q);
+
+  await Promise.all(
+    snap.docs.map(async (docSnap) => {
+      const data = docSnap.data() as Schedule;
+
+      const assignmentsWithAttendance = (data.assignments ?? []).map(
+        (a) => ({
+          ...a,
+          attendance: "pending" as AttendanceStatus,
+        })
+      );
+
+      await setDoc(
+        docSnap.ref,
+        {
+          status: "published",
+          assignments: assignmentsWithAttendance,
+          assignmentPersonIds: assignmentsWithAttendance.map(
+            (a) => a.personId
+          ),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    })
+  );
+}
+
+/* =========================
+   REVERT MONTH TO DRAFT
+========================= */
+
+export async function revertSchedulesToDraftByMonth(params: {
+  ministryId: string;
+  serviceDayIds: string[];
+}) {
+  if (params.serviceDayIds.length === 0) return;
+
+  const q = query(
+    collection(db, COLLECTION),
+    where("ministryId", "==", params.ministryId),
+    where("serviceDayId", "in", params.serviceDayIds),
+    where("status", "==", "published")
+  );
+
+  const snap = await getDocs(q);
+
+  await Promise.all(
+    snap.docs.map((docSnap) =>
+      setDoc(
+        docSnap.ref,
+        {
+          status: "draft",
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      )
+    )
+  );
+}
+
+/* =========================
+   ATTENDANCE
 ========================= */
 
 export async function updateAttendance(params: {
   scheduleId: string;
   personId: string;
   attendance: AttendanceStatus;
+  reason?: string;
 }) {
-  const { scheduleId, personId, attendance } = params;
+  const { scheduleId, personId, attendance, reason } = params;
 
-  const q = query(
-    collection(db, COLLECTION),
-    where("__name__", "==", scheduleId)
-  );
+  const ref = doc(db, COLLECTION, scheduleId);
+  const snap = await getDoc(ref);
 
-  const snap = await getDocs(q);
-
-  if (snap.empty) {
+  if (!snap.exists()) {
     throw new Error("Escala não encontrada");
   }
 
-  const ref = doc(db, COLLECTION, scheduleId);
-  const schedule = snap.docs[0].data() as Schedule;
+  const schedule = snap.data() as Schedule;
 
   if (schedule.status !== "published") {
     throw new Error("Escala não publicada");
@@ -281,7 +372,7 @@ export async function updateAttendance(params: {
 
   const updatedAssignments = (schedule.assignments ?? []).map((a) =>
     a.personId === personId
-      ? { ...a, attendance }
+      ? { ...a, attendance, ...(reason ? { reason } : {}) }
       : a
   );
 
@@ -295,11 +386,117 @@ export async function updateAttendance(params: {
   );
 }
 
+/* =========================
+   REPLACE ASSIGNMENT
+========================= */
+
+export async function replaceScheduleAssignment(params: {
+  scheduleId: string;
+  oldPersonId: string;
+  newPersonId: string;
+  performedBy: string;
+}) {
+  const { scheduleId, oldPersonId, newPersonId, performedBy } =
+    params;
+
+  const ref = doc(db, COLLECTION, scheduleId);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) {
+    throw new Error("Escala não encontrada");
+  }
+
+  const data = snap.data() as Schedule;
+
+  const updatedAssignments = [
+    ...data.assignments.filter((a) => a.personId !== oldPersonId),
+    {
+      personId: newPersonId,
+      ministryId: data.ministryId,
+      attendance: "pending" as AttendanceStatus,
+    },
+  ];
+
+  await setDoc(
+    ref,
+    {
+      assignments: updatedAssignments,
+      assignmentPersonIds: updatedAssignments.map(
+        (a) => a.personId
+      ),
+      updatedAt: serverTimestamp(),
+      updatedBy: performedBy,
+    },
+    { merge: true }
+  );
+}
+
+/* =========================
+   DELETE
+========================= */
+
+export async function deleteSchedulesByServiceDay(serviceDayId: string) {
+  if (!serviceDayId) return;
+
+  const q = query(
+    collection(db, COLLECTION),
+    where("serviceDayId", "==", serviceDayId)
+  );
+
+  const snap = await getDocs(q);
+
+  await Promise.all(
+    snap.docs.map((d) =>
+      deleteDoc(doc(db, COLLECTION, d.id))
+    )
+  );
+}
+
+/* =========================
+   DRAFT HELPERS
+========================= */
+
+export async function listDraftSchedulesByMonth(params: {
+  ministryId: string;
+  serviceDayIds: string[];
+}) {
+  if (params.serviceDayIds.length === 0) return [];
+
+  const q = query(
+    collection(db, COLLECTION),
+    where("ministryId", "==", params.ministryId),
+    where("serviceDayId", "in", params.serviceDayIds),
+    where("status", "==", "draft")
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...(d.data() as any),
+  }));
+}
+
+export async function deleteDraftSchedulesByMonth(params: {
+  ministryId: string;
+  serviceDayIds: string[];
+}) {
+  const drafts = await listDraftSchedulesByMonth(params);
+
+  await Promise.all(
+    drafts.map((d) =>
+      deleteDoc(doc(db, COLLECTION, d.id))
+    )
+  );
+}
+
+/* =========================
+   LIST PUBLISHED BY PERSON ✅ FIX
+========================= */
+
 export async function listPublishedSchedulesByPerson(params: {
   personId: string;
-}): Promise<
-  (Schedule & { attendance: "pending" | "confirmed" | "declined" })[]
-> {
+}) {
   const { personId } = params;
 
   const q = query(
@@ -310,90 +507,11 @@ export async function listPublishedSchedulesByPerson(params: {
   const snap = await getDocs(q);
 
   return snap.docs
-    .map((d) => {
-      const data = d.data() as Schedule;
-      const assignment = data.assignments?.find(
-        (a) => a.personId === personId
-      );
-
-      if (!assignment) return null;
-
-      return {
-        ...data,
-        id: d.id,
-        attendance: assignment.attendance ?? "pending",
-      };
-    })
-    .filter(Boolean) as any[];
-}
-
-/* =========================
-   REPLACE ASSIGNMENT
-========================= */
-
-export async function replaceScheduleAssignment(params: {
-  scheduleId: string;
-  oldPersonId: string;
-  newPersonId: string;
-  performedBy: string; // leader personId
-}) {
-  const { scheduleId, oldPersonId, newPersonId, performedBy } = params;
-
-  if (!scheduleId || !oldPersonId || !newPersonId || !performedBy) {
-    throw new Error("Parâmetros inválidos para substituição");
-  }
-
-  const ref = doc(db, "schedules", scheduleId);
-  const snap = await getDoc(ref);
-
-  if (!snap.exists()) {
-    throw new Error("Escala não encontrada");
-  }
-
-  const data = snap.data();
-  const assignments = data.assignments ?? [];
-
-  // 🔒 Não permitir duplicar pessoa
-  if (assignments.some((a: any) => a.personId === newPersonId)) {
-    throw new Error("Pessoa já está escalada");
-  }
-
-  // 🔁 Remove antigo + adiciona novo
-  const updatedAssignments = [
-    ...assignments.filter(
-      (a: any) => a.personId !== oldPersonId
-    ),
-    {
-      personId: newPersonId,
-      ministryId: data.ministryId,
-      attendance: "pending",
-    },
-  ];
-
-  await setDoc(
-    ref,
-    {
-      assignments: updatedAssignments,
-      updatedAt: serverTimestamp(),
-      updatedBy: performedBy,
-    },
-    { merge: true }
-  );
-}
-
-export async function deleteSchedulesByServiceDay(serviceDayId: string) {
-  if (!serviceDayId) return;
-
-  const q = query(
-    collection(db, "schedules"),
-    where("serviceDayId", "==", serviceDayId)
-  );
-
-  const snap = await getDocs(q);
-
-  const deletions = snap.docs.map((d) =>
-    deleteDoc(doc(db, "schedules", d.id))
-  );
-
-  await Promise.all(deletions);
+    .map((doc) => ({
+      id: doc.id,
+      ...(doc.data() as Omit<Schedule, "id">),
+    }))
+    .filter((s) =>
+      s.assignments?.some((a) => a.personId === personId)
+    );
 }

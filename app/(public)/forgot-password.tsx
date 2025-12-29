@@ -35,7 +35,6 @@ export default function ForgotPasswordScreen() {
         "Enviamos um email com instruções para redefinir sua senha"
       );
     } catch (err: any) {
-      console.error("RESET PASSWORD ERROR:", err);
 
       if (err.code === "auth/user-not-found") {
         setError("Nenhuma conta encontrada com este email");

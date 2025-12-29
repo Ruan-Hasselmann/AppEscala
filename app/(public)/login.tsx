@@ -51,7 +51,6 @@ export default function LoginScreen() {
       await login(email.trim().toLowerCase(), password);
       // ⚠️ navegação será tratada depois (guards)
     } catch (err: any) {
-      console.log("LOGIN ERROR:", err.code, err.message);
       setError("Email ou senha inválidos");
     } finally {
       setSubmitting(false);

@@ -5,13 +5,13 @@ import { getAppSettings, saveAppSettings } from "@/src/services/settings";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
-    Modal,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 /* =========================
@@ -274,7 +274,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 ========================= */
 
 const styles = StyleSheet.create({
-  container: { padding: 16, paddingBottom: 40 },
+  container: { padding: 16 },
 
   section: { marginBottom: 24 },
 

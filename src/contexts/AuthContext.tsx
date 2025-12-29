@@ -77,7 +77,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           personId: person.id,
         });
       } catch (err) {
-        console.error("Erro ao carregar perfil:", err);
         setUser(null);
       } finally {
         setLoading(false);
