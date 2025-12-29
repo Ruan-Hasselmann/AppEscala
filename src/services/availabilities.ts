@@ -1,13 +1,13 @@
 // src/services/availabilities.ts
 import {
-    collection,
-    deleteDoc,
-    doc,
-    getDocs,
-    query,
-    serverTimestamp,
-    setDoc,
-    where,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -113,6 +113,22 @@ export async function listAvailabilityByService(params: {
     collection(db, COLLECTION),
     where("serviceDayId", "==", serviceDayId),
     where("serviceLabel", "==", serviceLabel)
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...(d.data() as Omit<Availability, "id">),
+  }));
+}
+
+export async function listAvailabilitiesByServiceDay(
+  serviceDayId: string
+): Promise<Availability[]> {
+  const q = query(
+    collection(db, COLLECTION),
+    where("serviceDayId", "==", serviceDayId)
   );
 
   const snap = await getDocs(q);

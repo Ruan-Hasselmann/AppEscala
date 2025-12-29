@@ -162,3 +162,25 @@ export async function togglePersonStatus(
     updatedAt: serverTimestamp(),
   });
 }
+
+export async function listLeaderMinistryIds(
+  personId: string
+): Promise<string[]> {
+  const person = await getPersonById(personId);
+
+  if (!person) {
+    console.warn("[listLeaderMinistryIds] pessoa não encontrada:", personId);
+    return [];
+  }
+
+  const ministryIds = person.ministries
+    .filter((m) => m.role === "leader")
+    .map((m) => m.ministryId);
+
+  console.log(
+    "[listLeaderMinistryIds] líder dos ministérios:",
+    ministryIds
+  );
+
+  return ministryIds;
+}

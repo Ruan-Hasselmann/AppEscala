@@ -397,3 +397,37 @@ export async function deleteSchedulesByServiceDay(serviceDayId: string) {
 
   await Promise.all(deletions);
 }
+
+export async function listDraftSchedulesByMonth(params: {
+  ministryId: string;
+  serviceDayIds: string[];
+}) {
+  if (params.serviceDayIds.length === 0) return [];
+
+  const q = query(
+    collection(db, "schedules"),
+    where("ministryId", "==", params.ministryId),
+    where("serviceDayId", "in", params.serviceDayIds),
+    where("status", "==", "draft")
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...(d.data() as any),
+  }));
+}
+
+export async function deleteDraftSchedulesByMonth(params: {
+  ministryId: string;
+  serviceDayIds: string[];
+}) {
+  const drafts = await listDraftSchedulesByMonth(params);
+
+  const deletions = drafts.map((d) =>
+    deleteDoc(doc(db, "schedules", d.id))
+  );
+
+  await Promise.all(deletions);
+}

@@ -24,26 +24,32 @@ export default function LeaderLayout() {
           ),
         }}
       />
-
       {/* Escala */}
       <Tabs.Screen
-        name="schedule"
+        name="schedule/auto-generate"
         options={{
-          title: "Gerar escala",
+          title: "Escala automática",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="calendar-outline" size={size} color={color} />
           ),
         }}
       />
-
       {/* Escala */}
+      <Tabs.Screen
+        name="schedule"
+        options={{
+          title: "Escala manual",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calendar-outline" size={size} color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="schedule/generate"
         options={{
           href: null,
         }}
       />
-
     </Tabs>
   );
 }
