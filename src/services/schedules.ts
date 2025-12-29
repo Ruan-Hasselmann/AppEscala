@@ -22,6 +22,7 @@ export type ScheduleAssignment = {
   personId: string;
   ministryId: string;
   attendance?: AttendanceStatus;
+  reason?: string; // ✅ motivo de recusa
 };
 
 export type Schedule = {
@@ -38,7 +39,11 @@ export type Schedule = {
   serviceDate: string;
 
   status: ScheduleStatus;
+
   assignments: ScheduleAssignment[];
+
+  // ✅ índice auxiliar para queries por pessoa
+  assignmentPersonIds: string[];
 
   createdBy: string;
   createdAt?: any;
@@ -84,11 +89,13 @@ export async function saveScheduleDraft(params: {
     throw new Error("Parâmetros inválidos para salvar escala");
   }
 
-  // ❗ regra mínima: não permitir pessoa duplicada no MESMO turno
+  // ❗ não permitir pessoa duplicada no mesmo turno
   const unique = new Set(assignments.map((a) => a.personId));
   if (unique.size !== assignments.length) {
     throw new Error("Pessoa duplicada na escala");
   }
+
+  const assignmentPersonIds = assignments.map((a) => a.personId);
 
   const q = query(
     collection(db, COLLECTION),
@@ -109,6 +116,7 @@ export async function saveScheduleDraft(params: {
         serviceDate,
         serviceDayDate: params.serviceDayDate,
         assignments,
+        assignmentPersonIds,
         status: "draft",
         updatedAt: serverTimestamp(),
       },
@@ -129,6 +137,7 @@ export async function saveScheduleDraft(params: {
     serviceDayDate: params.serviceDayDate,
     status: "draft",
     assignments,
+    assignmentPersonIds,
     createdBy,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -247,7 +256,10 @@ export async function publishSchedule(params: {
     ref,
     {
       status: "published",
-      assignments: assignmentsWithAttendance, // ✅ BUG FIX
+      assignments: assignmentsWithAttendance,
+      assignmentPersonIds: assignmentsWithAttendance.map(
+        (a) => a.personId
+      ),
       updatedAt: serverTimestamp(),
     },
     { merge: true }
@@ -255,20 +267,19 @@ export async function publishSchedule(params: {
 }
 
 /* =========================
-   NEW — PUBLISH BY MONTH (OPÇÃO A)
+   PUBLISH BY MONTH
 ========================= */
 
 export async function publishSchedulesByMonth(params: {
   ministryId: string;
   serviceDayIds: string[];
 }) {
-  const { ministryId, serviceDayIds } = params;
-  if (serviceDayIds.length === 0) return;
+  if (params.serviceDayIds.length === 0) return;
 
   const q = query(
     collection(db, COLLECTION),
-    where("ministryId", "==", ministryId),
-    where("serviceDayId", "in", serviceDayIds),
+    where("ministryId", "==", params.ministryId),
+    where("serviceDayId", "in", params.serviceDayIds),
     where("status", "==", "draft")
   );
 
@@ -278,17 +289,21 @@ export async function publishSchedulesByMonth(params: {
     snap.docs.map(async (docSnap) => {
       const data = docSnap.data() as Schedule;
 
-      const assignmentsWithAttendance =
-        (data.assignments ?? []).map((a) => ({
+      const assignmentsWithAttendance = (data.assignments ?? []).map(
+        (a) => ({
           ...a,
           attendance: "pending" as AttendanceStatus,
-        }));
+        })
+      );
 
       await setDoc(
         docSnap.ref,
         {
           status: "published",
           assignments: assignmentsWithAttendance,
+          assignmentPersonIds: assignmentsWithAttendance.map(
+            (a) => a.personId
+          ),
           updatedAt: serverTimestamp(),
         },
         { merge: true }
@@ -298,20 +313,19 @@ export async function publishSchedulesByMonth(params: {
 }
 
 /* =========================
-   NEW — REVERT MONTH TO DRAFT
+   REVERT MONTH TO DRAFT
 ========================= */
 
 export async function revertSchedulesToDraftByMonth(params: {
   ministryId: string;
   serviceDayIds: string[];
 }) {
-  const { ministryId, serviceDayIds } = params;
-  if (serviceDayIds.length === 0) return;
+  if (params.serviceDayIds.length === 0) return;
 
   const q = query(
     collection(db, COLLECTION),
-    where("ministryId", "==", ministryId),
-    where("serviceDayId", "in", serviceDayIds),
+    where("ministryId", "==", params.ministryId),
+    where("serviceDayId", "in", params.serviceDayIds),
     where("status", "==", "published")
   );
 
@@ -339,8 +353,9 @@ export async function updateAttendance(params: {
   scheduleId: string;
   personId: string;
   attendance: AttendanceStatus;
+  reason?: string;
 }) {
-  const { scheduleId, personId, attendance } = params;
+  const { scheduleId, personId, attendance, reason } = params;
 
   const ref = doc(db, COLLECTION, scheduleId);
   const snap = await getDoc(ref);
@@ -356,7 +371,9 @@ export async function updateAttendance(params: {
   }
 
   const updatedAssignments = (schedule.assignments ?? []).map((a) =>
-    a.personId === personId ? { ...a, attendance } : a
+    a.personId === personId
+      ? { ...a, attendance, ...(reason ? { reason } : {}) }
+      : a
   );
 
   await setDoc(
@@ -390,18 +407,13 @@ export async function replaceScheduleAssignment(params: {
   }
 
   const data = snap.data() as Schedule;
-  const assignments = data.assignments ?? [];
-
-  if (assignments.some((a) => a.personId === newPersonId)) {
-    throw new Error("Pessoa já está escalada");
-  }
 
   const updatedAssignments = [
-    ...assignments.filter((a) => a.personId !== oldPersonId),
+    ...data.assignments.filter((a) => a.personId !== oldPersonId),
     {
       personId: newPersonId,
       ministryId: data.ministryId,
-      attendance: "pending",
+      attendance: "pending" as AttendanceStatus,
     },
   ];
 
@@ -409,6 +421,9 @@ export async function replaceScheduleAssignment(params: {
     ref,
     {
       assignments: updatedAssignments,
+      assignmentPersonIds: updatedAssignments.map(
+        (a) => a.personId
+      ),
       updatedAt: serverTimestamp(),
       updatedBy: performedBy,
     },
@@ -473,4 +488,30 @@ export async function deleteDraftSchedulesByMonth(params: {
       deleteDoc(doc(db, COLLECTION, d.id))
     )
   );
+}
+
+/* =========================
+   LIST PUBLISHED BY PERSON ✅ FIX
+========================= */
+
+export async function listPublishedSchedulesByPerson(params: {
+  personId: string;
+}) {
+  const { personId } = params;
+
+  const q = query(
+    collection(db, COLLECTION),
+    where("status", "==", "published")
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs
+    .map((doc) => ({
+      id: doc.id,
+      ...(doc.data() as Omit<Schedule, "id">),
+    }))
+    .filter((s) =>
+      s.assignments?.some((a) => a.personId === personId)
+    );
 }

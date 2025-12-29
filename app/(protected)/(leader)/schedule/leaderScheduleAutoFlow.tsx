@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 import { AppHeader } from "@/src/components/AppHeader";
@@ -13,18 +13,18 @@ import { useAuth } from "@/src/contexts/AuthContext";
 
 import { listMinistriesByIds, Ministry } from "@/src/services/ministries";
 import {
-    listLeaderMinistryIds,
-    listPeopleByIds,
-    Person,
+  listLeaderMinistryIds,
+  listPeopleByIds,
+  Person,
 } from "@/src/services/people";
 import { getServiceDaysByMonth } from "@/src/services/serviceDays";
 
 import {
-    listSchedulesByMonth,
-    publishSchedulesByMonth,
-    replaceScheduleAssignment,
-    revertSchedulesToDraftByMonth,
-    Schedule,
+  listSchedulesByMonth,
+  publishSchedulesByMonth,
+  replaceScheduleAssignment,
+  revertSchedulesToDraftByMonth,
+  Schedule,
 } from "@/src/services/schedules";
 
 import { loadAutoScheduleData } from "@/src/services/scheduleAutoData";
@@ -33,6 +33,7 @@ import { generateAndSaveSchedule } from "@/src/services/scheduleAutomation";
 import { ConfirmActionModal } from "@/src/components/ConfirmActionModal";
 import { EditScheduleAssignmentModal } from "@/src/components/EditScheduleAssignmentModal";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useFocusEffect } from "expo-router";
 
 /* =========================
    CONSTANTS
@@ -182,9 +183,11 @@ export default function LeaderScheduleAutoFlow() {
     }
   }
 
-  useEffect(() => {
-    loadReviewData();
-  }, [user, reviewMonthDate]);
+  useFocusEffect(
+    useCallback(() => {
+      loadReviewData();
+    }, [user, reviewMonthDate])
+  );
 
   /* =========================
      GENERATE / REGENERATE
@@ -439,8 +442,8 @@ export default function LeaderScheduleAutoFlow() {
             {loading
               ? "Gerando escalas..."
               : hasDraftSchedules
-              ? "Regerar escala do mês"
-              : "Gerar escala automaticamente"}
+                ? "Regerar escala do mês"
+                : "Gerar escala automaticamente"}
           </Text>
         </Pressable>
 
